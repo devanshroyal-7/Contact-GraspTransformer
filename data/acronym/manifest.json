@@ -1,0 +1,32 @@
+[
+  {
+    "category": "Mug",
+    "grasp_file": "Mug_2997f21fa426e18a6ab1a25d0e8f3590_0.021360488699532477.h5",
+    "mesh_path": "meshes/Mug/2997f21fa426e18a6ab1a25d0e8f3590.obj",
+    "scale": 0.0213604887
+  },
+  {
+    "category": "Bowl",
+    "grasp_file": "Bowl_50ad83141272138a606b9bf35534b61b_0.00014387602753246012.h5",
+    "mesh_path": "meshes/Bowl/50ad83141272138a606b9bf35534b61b.obj",
+    "scale": 0.000143876
+  },
+  {
+    "category": "Bottle",
+    "grasp_file": "Bottle_244894af3ba967ccd957eaf7f4edb205_0.012953570261294404.h5",
+    "mesh_path": "meshes/Bottle/244894af3ba967ccd957eaf7f4edb205.obj",
+    "scale": 0.0129535703
+  },
+  {
+    "category": "Cup",
+    "grasp_file": "Cup_106f8b5d2f2c777535c291801eaf5463_6.809242501596408e-05.h5",
+    "mesh_path": "meshes/Cup/106f8b5d2f2c777535c291801eaf5463.obj",
+    "scale": 6.80924e-05
+  },
+  {
+    "category": "Pan",
+    "grasp_file": "Pan_471fcc6a297e566b985620cba44cf716_0.011075909986682037.h5",
+    "mesh_path": "meshes/Pan/471fcc6a297e566b985620cba44cf716.obj",
+    "scale": 0.01107591
+  }
+]
