@@ -1,71 +1,143 @@
 import os
 import torch
 import argparse
+import wandb
 from torch.utils.data import DataLoader
 from data.dataset import CGNDataset
 from models.model import ContactGraspNet
 from loss import CGNLoss
 
+
+def build_optimizer(model, cfg):
+    params = model.parameters()
+    if cfg.optimizer == "adamw":
+        return torch.optim.AdamW(params, lr=cfg.lr, weight_decay=cfg.weight_decay)
+    return torch.optim.Adam(params, lr=cfg.lr, weight_decay=cfg.weight_decay)
+
+
+def build_scheduler(optimizer, cfg):
+    if cfg.scheduler == "cosine":
+        return torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=cfg.epochs
+        )
+    if cfg.scheduler == "step":
+        step_size = max(1, cfg.epochs // 3)
+        return torch.optim.lr_scheduler.StepLR(
+            optimizer, step_size=step_size, gamma=cfg.scheduler_gamma
+        )
+    return None
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data_dir', type=str, default='data/out', help='Path to datasets')
-    parser.add_argument('--backbone', type=str, default='pn2', choices=['pn2', 'ptv3'], help='Backbone type')
-    parser.add_argument('--epochs', type=int, default=10)
-    parser.add_argument('--batch_size', type=int, default=4)
-    parser.add_argument('--lr', type=float, default=0.001)
-    parser.add_argument('--overfit_one_batch', action='store_true', help='Test flag')
+    parser.add_argument("--data_dir", type=str, default="data/out", help="Path to datasets")
+    parser.add_argument("--backbone", type=str, default="pn2", choices=["pn2", "ptv3"], help="Backbone type")
+    parser.add_argument("--epochs", type=int, default=10)
+    parser.add_argument("--batch_size", type=int, default=4)
+    parser.add_argument("--lr", type=float, default=0.001)
+    parser.add_argument("--optimizer", type=str, default="adam", choices=["adam", "adamw"])
+    parser.add_argument("--weight_decay", type=float, default=0.0)
+    parser.add_argument("--scheduler", type=str, default="none", choices=["none", "cosine", "step"])
+    parser.add_argument("--scheduler_gamma", type=float, default=0.3)
+    parser.add_argument("--grad_clip_max_norm", type=float, default=0.0, help="0 disables gradient clipping")
+    parser.add_argument("--loss_app_weight", type=float, default=0.1)
+    parser.add_argument("--loss_base_weight", type=float, default=0.1)
+    parser.add_argument("--loss_width_weight", type=float, default=1.0)
+    parser.add_argument("--num_points", type=int, default=20000)
+    parser.add_argument("--overfit_one_batch", action="store_true", help="Test flag")
     args = parser.parse_args()
-    
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f"Using {args.backbone} backbone on {device}")
-    
-    model = ContactGraspNet(backbone_type=args.backbone).to(device)
-    criterion = CGNLoss().to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-    
-    if os.path.exists(args.data_dir) and len(os.listdir(args.data_dir)) > 0:
-        dataset = CGNDataset(args.data_dir)
-        # Using a small mock loader
-        train_loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
+
+    run = wandb.init(project="cgn-sweep", config=vars(args))
+    cfg = wandb.config
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using {cfg.backbone} backbone on {device}")
+
+    model = ContactGraspNet(backbone_type=cfg.backbone).to(device)
+    criterion = CGNLoss(
+        app_weight=cfg.loss_app_weight,
+        base_weight=cfg.loss_base_weight,
+        width_weight=cfg.loss_width_weight,
+    ).to(device)
+    optimizer = build_optimizer(model, cfg)
+    scheduler = build_scheduler(optimizer, cfg)
+
+    if os.path.exists(cfg.data_dir) and len(os.listdir(cfg.data_dir)) > 0:
+        dataset = CGNDataset(cfg.data_dir, num_points=cfg.num_points)
+        train_loader = DataLoader(dataset, batch_size=cfg.batch_size, shuffle=True)
     else:
         print("No real data found. Using mock random data to verify pipeline builds.")
-        mock_data = [{
-            'points': torch.randn(2048, 3),
-            'confidence': torch.randint(0, 2, (2048,)).float(),
-            'approach_dirs': torch.randn(2048, 3),
-            'base_dirs': torch.randn(2048, 3),
-            'widths': torch.rand(2048) * 0.1
-        } for _ in range(8)]
-        train_loader = DataLoader(mock_data, batch_size=args.batch_size)
-    
-    for epoch in range(args.epochs):
+        n = cfg.num_points
+        mock_data = [
+            {
+                "points": torch.randn(n, 3),
+                "confidence": torch.randint(0, 2, (n,)).float(),
+                "approach_dirs": torch.randn(n, 3),
+                "base_dirs": torch.randn(n, 3),
+                "widths": torch.rand(n) * 0.1,
+            }
+            for _ in range(8)
+        ]
+        train_loader = DataLoader(mock_data, batch_size=cfg.batch_size)
+
+    for epoch in range(cfg.epochs):
         model.train()
         total_loss = 0
-        
+        total_conf = 0
+        total_app = 0
+        total_base = 0
+        total_width = 0
+
         for batch in train_loader:
-            points = batch['points'].to(device)
-            # targets
-            targets = {k: v.to(device) for k, v in batch.items() if k != 'points'}
-            
+            points = batch["points"].to(device)
+            targets = {k: v.to(device) for k, v in batch.items() if k != "points"}
+
             optimizer.zero_grad()
             preds = model(points)
-            
-            loss_dict = criterion(preds, targets)
-            loss = loss_dict['loss']
-            
-            loss.backward()
-            optimizer.step()
-            
-            total_loss += loss.item()
-            
-            if args.overfit_one_batch:
-                print(f"Epoch {epoch} | Loss: {loss.item():.4f} | Conf: {loss_dict['l_conf'].item():.4f}")
-                break
-                
-        if not args.overfit_one_batch:
-            print(f"Epoch {epoch} | Avg Loss: {total_loss / len(train_loader):.4f}")
-            
-    print("Training finished.")
 
-if __name__ == '__main__':
+            loss_dict = criterion(preds, targets)
+            loss = loss_dict["loss"]
+
+            loss.backward()
+
+            if cfg.grad_clip_max_norm > 0:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip_max_norm)
+
+            optimizer.step()
+
+            total_loss += loss.item()
+            total_conf += loss_dict["l_conf"].item()
+            total_app += loss_dict["l_app"].item()
+            total_base += loss_dict["l_base"].item()
+            total_width += loss_dict["l_width"].item()
+
+            if args.overfit_one_batch:
+                print(
+                    f"Epoch {epoch} | Loss: {loss.item():.4f} | Conf: {loss_dict['l_conf'].item():.4f}"
+                )
+                break
+
+        if scheduler is not None:
+            scheduler.step()
+
+        n_batches = len(train_loader)
+        metrics = {
+            "val/loss": total_loss / n_batches,
+            "train/loss_conf": total_conf / n_batches,
+            "train/loss_app": total_app / n_batches,
+            "train/loss_base": total_base / n_batches,
+            "train/loss_width": total_width / n_batches,
+            "train/lr": optimizer.param_groups[0]["lr"],
+            "epoch": epoch,
+        }
+        wandb.log(metrics)
+
+        if not args.overfit_one_batch:
+            print(f"Epoch {epoch} | Avg Loss: {total_loss / n_batches:.4f}")
+
+    print("Training finished.")
+    run.finish()
+
+
+if __name__ == "__main__":
     main()

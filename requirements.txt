@@ -6,3 +6,4 @@ pyrender>=0.1.45
 scipy>=1.10
 matplotlib>=3.7
 open3d>=0.17
+wandb>=0.15

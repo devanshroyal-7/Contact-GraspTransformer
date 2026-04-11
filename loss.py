@@ -3,8 +3,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class CGNLoss(nn.Module):
-    def __init__(self):
+    def __init__(self, app_weight=0.1, base_weight=0.1, width_weight=1.0):
         super().__init__()
+        self.app_weight = app_weight
+        self.base_weight = base_weight
+        self.width_weight = width_weight
         self.bce = nn.BCEWithLogitsLoss()
         self.l1 = nn.L1Loss(reduction='none')
 
@@ -46,7 +49,10 @@ class CGNLoss(nn.Module):
             # 4. Width Loss (L1 or L2)
             loss_width = self.l1(pred_width, targ_width).mean()
             
-        total_loss = loss_conf + 0.1 * loss_app + 0.1 * loss_base + 1.0 * loss_width
+        total_loss = (loss_conf
+                      + self.app_weight * loss_app
+                      + self.base_weight * loss_base
+                      + self.width_weight * loss_width)
         
         loss_dict = {
             'loss': total_loss,

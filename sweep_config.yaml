@@ -1,0 +1,49 @@
+program: train.py
+method: bayes
+metric:
+  name: val/loss
+  goal: minimize
+
+parameters:
+  lr:
+    distribution: log_uniform_values
+    min: 1e-5
+    max: 1e-2
+  optimizer:
+    values: [adam, adamw]
+  weight_decay:
+    distribution: log_uniform_values
+    min: 1e-6
+    max: 1e-2
+  batch_size:
+    values: [4, 8, 16]
+  scheduler:
+    values: [none, cosine, step]
+  scheduler_gamma:
+    distribution: uniform
+    min: 0.1
+    max: 0.5
+  grad_clip_max_norm:
+    distribution: uniform
+    min: 0.5
+    max: 5.0
+  loss_app_weight:
+    distribution: uniform
+    min: 0.01
+    max: 1.0
+  loss_base_weight:
+    distribution: uniform
+    min: 0.01
+    max: 1.0
+  loss_width_weight:
+    distribution: uniform
+    min: 0.1
+    max: 5.0
+  num_points:
+    values: [4096, 8192, 20000]
+
+command:
+  - ${env}
+  - python
+  - ${program}
+  - ${args_no_hyphens}
