@@ -40,8 +40,7 @@ def main():
     parser.add_argument("--scheduler", type=str, default="none", choices=["none", "cosine", "step"])
     parser.add_argument("--scheduler_gamma", type=float, default=0.3)
     parser.add_argument("--grad_clip_max_norm", type=float, default=0.0, help="0 disables gradient clipping")
-    parser.add_argument("--loss_app_weight", type=float, default=0.1)
-    parser.add_argument("--loss_base_weight", type=float, default=0.1)
+    parser.add_argument("--loss_adds_weight", type=float, default=10.0)
     parser.add_argument("--loss_width_weight", type=float, default=1.0)
     parser.add_argument("--num_points", type=int, default=20000)
     parser.add_argument("--overfit_one_batch", action="store_true", help="Test flag")
@@ -55,8 +54,7 @@ def main():
 
     model = ContactGraspNet(backbone_type=cfg.backbone).to(device)
     criterion = CGNLoss(
-        app_weight=cfg.loss_app_weight,
-        base_weight=cfg.loss_base_weight,
+        adds_weight=cfg.loss_adds_weight,
         width_weight=cfg.loss_width_weight,
     ).to(device)
     optimizer = build_optimizer(model, cfg)
@@ -84,13 +82,12 @@ def main():
         model.train()
         total_loss = 0
         total_conf = 0
-        total_app = 0
-        total_base = 0
+        total_adds = 0
         total_width = 0
 
         for batch in train_loader:
             points = batch["points"].to(device)
-            targets = {k: v.to(device) for k, v in batch.items() if k != "points"}
+            targets = {k: v.to(device) for k, v in batch.items()}
 
             optimizer.zero_grad()
             preds = model(points)
@@ -107,8 +104,7 @@ def main():
 
             total_loss += loss.item()
             total_conf += loss_dict["l_conf"].item()
-            total_app += loss_dict["l_app"].item()
-            total_base += loss_dict["l_base"].item()
+            total_adds += loss_dict["l_adds"].item()
             total_width += loss_dict["l_width"].item()
 
             if args.overfit_one_batch:
@@ -124,8 +120,7 @@ def main():
         metrics = {
             "val/loss": total_loss / n_batches,
             "train/loss_conf": total_conf / n_batches,
-            "train/loss_app": total_app / n_batches,
-            "train/loss_base": total_base / n_batches,
+            "train/loss_adds": total_adds / n_batches,
             "train/loss_width": total_width / n_batches,
             "train/lr": optimizer.param_groups[0]["lr"],
             "epoch": epoch,
