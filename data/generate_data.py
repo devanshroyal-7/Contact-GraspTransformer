@@ -272,13 +272,21 @@ def assign_grasp_labels(points: np.ndarray,
 # ──────────────────────── render + label one view ─────────────────────────────
 
 def _roi_crop(pc: np.ndarray, object_mask: np.ndarray,
-              margin: float = 0.02) -> np.ndarray:
-    """Return boolean mask selecting points inside an expanded object bbox."""
+              min_edge: float = 0.30, scale: float = 2.0) -> np.ndarray:
+    """Return boolean mask for a local ROI cube around the object.
+
+    Edge length = max(scale * largest_object_span, min_edge), following
+    the CGN paper's local-region strategy (Sec. IV-B).  This keeps the
+    object centred with ample surrounding table context (~3/4 table).
+    """
     if not object_mask.any():
         return np.ones(len(pc), dtype=bool)
     obj_pts = pc[object_mask]
-    lo = obj_pts.min(axis=0) - margin
-    hi = obj_pts.max(axis=0) + margin
+    centre = obj_pts.mean(axis=0)
+    span = obj_pts.max(axis=0) - obj_pts.min(axis=0)
+    half_edge = max(span.max() * scale, min_edge) / 2.0
+    lo = centre - half_edge
+    hi = centre + half_edge
     return np.all((pc >= lo) & (pc <= hi), axis=1)
 
 
@@ -312,8 +320,8 @@ def process_view(scene, cam_node, renderer, cam_pose_gl, intr,
     pc_world = (c2w[:3, :3] @ pc_raw.T + c2w[:3, 3:4]).T
     object_mask_raw = pc_world[:, 2] > table_surface_z + 0.004
 
-    # ROI crop: keep points inside expanded object bounding box
-    roi_mask = _roi_crop(pc_raw, object_mask_raw, margin=0.02)
+    # ROI crop: local region around object with table context
+    roi_mask = _roi_crop(pc_raw, object_mask_raw)
     pc_roi = pc_raw[roi_mask]
     object_mask_roi = object_mask_raw[roi_mask]
 
