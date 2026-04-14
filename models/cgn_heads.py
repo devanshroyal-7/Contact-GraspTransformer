@@ -42,32 +42,34 @@ class CGNHeads(nn.Module):
         centres = torch.arange(num_width_bins).float() * bin_width + bin_width / 2
         self.register_buffer("bin_centres", centres)
 
+        hidden = max(in_channels, 64)
+
         self.conv_conf = nn.Sequential(
-            nn.Conv1d(in_channels, 128, 1),
-            nn.BatchNorm1d(128),
+            nn.Conv1d(in_channels, hidden, 1),
+            nn.BatchNorm1d(hidden),
             nn.ReLU(),
-            nn.Conv1d(128, 1, 1),
+            nn.Conv1d(hidden, 1, 1),
         )
 
         self.conv_z1 = nn.Sequential(
-            nn.Conv1d(in_channels, 128, 1),
-            nn.BatchNorm1d(128),
+            nn.Conv1d(in_channels, hidden, 1),
+            nn.BatchNorm1d(hidden),
             nn.ReLU(),
-            nn.Conv1d(128, 3, 1),
+            nn.Conv1d(hidden, 3, 1),
         )
 
         self.conv_z2 = nn.Sequential(
-            nn.Conv1d(in_channels, 128, 1),
-            nn.BatchNorm1d(128),
+            nn.Conv1d(in_channels, hidden, 1),
+            nn.BatchNorm1d(hidden),
             nn.ReLU(),
-            nn.Conv1d(128, 3, 1),
+            nn.Conv1d(hidden, 3, 1),
         )
 
         self.conv_width = nn.Sequential(
-            nn.Conv1d(in_channels, 128, 1),
-            nn.BatchNorm1d(128),
+            nn.Conv1d(in_channels, hidden, 1),
+            nn.BatchNorm1d(hidden),
             nn.ReLU(),
-            nn.Conv1d(128, num_width_bins, 1),
+            nn.Conv1d(hidden, num_width_bins, 1),
         )
 
     def forward(self, features):

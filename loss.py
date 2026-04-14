@@ -51,7 +51,7 @@ class CGNLoss(nn.Module):
     * **l_width**: weighted multi-label BCE over 10 equidistant width bins.
     """
 
-    def __init__(self, adds_weight=10.0, width_weight=1.0, topk=512,
+    def __init__(self, adds_weight=10.0, width_weight=1.0, topk=128,
                  num_width_bins=NUM_WIDTH_BINS,
                  gripper_width_max=GRIPPER_WIDTH_MAX):
         super().__init__()
@@ -139,5 +139,5 @@ class CGNLoss(nn.Module):
         v_gt = _gripper_keypoints(contact, targ_app, targ_base, targ_width)
 
         per_point_dist = (v_pred - v_gt).norm(dim=-1).mean(dim=-1)  # (K,)
-        weighted = pred_conf.detach() * per_point_dist
+        weighted = pred_conf * per_point_dist
         return weighted.mean()

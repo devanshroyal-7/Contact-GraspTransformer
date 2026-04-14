@@ -16,7 +16,7 @@ Output .npz keys:
     camera_pose    (4, 4)    float64   camera pose (for reference)
 
 Usage:
-    python data/generate_data.py                        # all objects, 36 views
+    python data/generate_data.py                        # all objects, 360 views
     python data/generate_data.py --category Mug         # just Mug
     python data/generate_data.py --n_views 5 --n_points 2048   # quick test
 """
@@ -139,19 +139,72 @@ def build_scene(mesh: trimesh.Trimesh, intr: dict,
 
 # ──────────────────────────── grasp loading ───────────────────────────────────
 
-def load_grasps(h5_path: str, mesh_mean: np.ndarray):
+def estimate_grasp_widths(transforms: np.ndarray,
+                          mesh_vertices: np.ndarray,
+                          success_mask: np.ndarray,
+                          search_radius: float = 0.10) -> np.ndarray:
+    """Estimate per-grasp closing widths from mesh geometry.
+
+    For each successful grasp, finds mesh vertices near the TCP and measures
+    the object's extent along the gripper baseline direction.  The default
+    search_radius is large (0.10m) because the TCP sits at the gripper base
+    frame, which is offset from the object surface by finger length.
+    """
+    G = len(transforms)
+    widths = np.full(G, 0.08, dtype=np.float32)
+
+    succ_idx = np.where(success_mask)[0]
+    if len(succ_idx) == 0 or len(mesh_vertices) == 0:
+        return widths
+
+    tree = KDTree(mesh_vertices)
+    for i in succ_idx:
+        tcp = transforms[i, :3, 3]
+        baseline = transforms[i, :3, 0]
+        approach = transforms[i, :3, 2]
+        near = tree.query_ball_point(tcp, r=search_radius)
+        if len(near) < 2:
+            continue
+        verts_near = mesh_vertices[near]
+        rel = verts_near - tcp
+        # filter to vertices roughly in front of gripper (along approach)
+        along_approach = rel @ approach
+        in_front = along_approach > 0
+        if in_front.sum() < 2:
+            in_front = np.ones(len(near), dtype=bool)
+        proj = rel[in_front] @ baseline
+        widths[i] = np.clip(proj.max() - proj.min(), 0.005, 0.08)
+
+    return widths
+
+
+def load_grasps(h5_path: str, mesh_mean: np.ndarray,
+                mesh_vertices: np.ndarray | None = None):
     """Load ACRONYM grasps and put them in the centred-mesh local frame.
 
     ACRONYM stores grasp transforms in the *scaled* object frame (real-world
     metres), so translations must NOT be re-scaled.  Only the mesh-mean
     shift is applied to match the centred mesh.
+
+    Returns (transforms, success_mask, widths).
     """
     with h5py.File(h5_path, "r") as f:
         transforms = np.array(f["grasps/transforms"])             # (G, 4, 4)
         success = np.array(f["grasps/qualities/flex/object_in_gripper"])  # (G,)
+        if "grasps/widths" in f:
+            widths = np.array(f["grasps/widths"]).astype(np.float32)
+        else:
+            widths = None
 
     transforms[:, :3, 3] -= mesh_mean
-    return transforms, (success > 0)
+    success_mask = success > 0
+
+    if widths is None:
+        widths = estimate_grasp_widths(
+            transforms, mesh_vertices if mesh_vertices is not None
+            else np.empty((0, 3)), success_mask)
+
+    return transforms, success_mask, widths
 
 
 def grasps_to_camera_frame(grasp_local: np.ndarray,
@@ -166,8 +219,9 @@ def assign_grasp_labels(points: np.ndarray,
                         surface_centres: np.ndarray,
                         z_dirs: np.ndarray,
                         x_dirs: np.ndarray,
+                        grasp_widths: np.ndarray | None = None,
                         object_mask: np.ndarray | None = None,
-                        dist_thresh: float = 0.02):
+                        dist_thresh: float = 0.005):
     """Per-point labels via radius query around surface-projected grasp centres.
 
     *surface_centres* are grasp TCPs projected onto the nearest mesh vertex
@@ -186,6 +240,9 @@ def assign_grasp_labels(points: np.ndarray,
 
     if len(surface_centres) == 0:
         return confidence, approach_dirs, base_dirs, widths
+
+    if grasp_widths is None:
+        grasp_widths = np.full(len(surface_centres), 0.08, dtype=np.float32)
 
     if object_mask is not None and object_mask.any():
         obj_idx = np.where(object_mask)[0]
@@ -207,15 +264,26 @@ def assign_grasp_labels(points: np.ndarray,
         confidence[update]    = 1.0
         approach_dirs[update] = z_dirs[gi]
         base_dirs[update]     = x_dirs[gi]
-        widths[update]        = 0.08
+        widths[update]        = grasp_widths[gi]
 
     return confidence, approach_dirs, base_dirs, widths
 
 
 # ──────────────────────── render + label one view ─────────────────────────────
 
+def _roi_crop(pc: np.ndarray, object_mask: np.ndarray,
+              margin: float = 0.02) -> np.ndarray:
+    """Return boolean mask selecting points inside an expanded object bbox."""
+    if not object_mask.any():
+        return np.ones(len(pc), dtype=bool)
+    obj_pts = pc[object_mask]
+    lo = obj_pts.min(axis=0) - margin
+    hi = obj_pts.max(axis=0) + margin
+    return np.all((pc >= lo) & (pc <= hi), axis=1)
+
+
 def process_view(scene, cam_node, renderer, cam_pose_gl, intr,
-                 grasp_local, success, obj_pose, mesh_verts,
+                 grasp_local, success, grasp_widths, obj_pose, mesh_verts,
                  n_points, table_surface_z: float = 0.3):
     """Render one view and compute per-point grasp labels.
 
@@ -237,14 +305,23 @@ def process_view(scene, cam_node, renderer, cam_pose_gl, intr,
                     widths=np.zeros(n_points, dtype=np.float32),
                     camera_pose=cam_pose_gl)
 
-    pc = regularize_pc(pc_raw, n_points)
-
     w2c = world_to_cam_matrix(cam_pose_gl)
     c2w = np.linalg.inv(w2c)
 
     # identify object vs table points via world-frame z
-    pc_world = (c2w[:3, :3] @ pc.T + c2w[:3, 3:4]).T
-    object_mask = pc_world[:, 2] > table_surface_z + 0.004
+    pc_world = (c2w[:3, :3] @ pc_raw.T + c2w[:3, 3:4]).T
+    object_mask_raw = pc_world[:, 2] > table_surface_z + 0.004
+
+    # ROI crop: keep points inside expanded object bounding box
+    roi_mask = _roi_crop(pc_raw, object_mask_raw, margin=0.02)
+    pc_roi = pc_raw[roi_mask]
+    object_mask_roi = object_mask_raw[roi_mask]
+
+    pc = regularize_pc(pc_roi, n_points)
+
+    # recompute object_mask for the subsampled cloud
+    pc_world_sub = (c2w[:3, :3] @ pc.T + c2w[:3, 3:4]).T
+    object_mask = pc_world_sub[:, 2] > table_surface_z + 0.004
 
     # mean-centre the point cloud
     pc_mean = pc.mean(axis=0, keepdims=True)
@@ -268,14 +345,16 @@ def process_view(scene, cam_node, renderer, cam_pose_gl, intr,
         surface_centres = mv_cam[nearest.flatten()]
         z_dirs = succ_tf[:, :3, 2]
         x_dirs = succ_tf[:, :3, 0]
+        succ_widths = grasp_widths[succ]
     else:
         surface_centres = np.empty((0, 3))
         z_dirs = np.empty((0, 3))
         x_dirs = np.empty((0, 3))
+        succ_widths = np.empty(0)
 
     conf, app, base, w = assign_grasp_labels(
         pc_centred, surface_centres, z_dirs, x_dirs,
-        object_mask=object_mask)
+        grasp_widths=succ_widths, object_mask=object_mask)
 
     cam_pose_cv = opengl_to_opencv_cam(cam_pose_gl)
     cam_pose_out = np.linalg.inv(cam_pose_cv)
@@ -303,7 +382,9 @@ def generate_object(acronym_root: str, entry: dict,
 
     scale = entry["scale"]
     mesh, mesh_mean = load_and_prepare_mesh(mesh_path, scale)
-    grasp_local, success = load_grasps(h5_path, mesh_mean)
+    mesh_verts = np.array(mesh.vertices)
+    grasp_local, success, grasp_widths = load_grasps(
+        h5_path, mesh_mean, mesh_vertices=mesh_verts)
 
     intr = REALSENSE
     scene, cam_node, renderer, obj_pose, table_dims = build_scene(mesh, intr)
@@ -313,12 +394,12 @@ def generate_object(acronym_root: str, entry: dict,
 
     total_pos = 0
     table_z = table_dims[2] / 2
-    mesh_verts = np.array(mesh.vertices)
     for i, cam_gl in enumerate(cam_poses):
         cam_gl[2, 3] += table_dims[2]            # shift camera above table
 
         sample = process_view(scene, cam_node, renderer, cam_gl, intr,
-                              grasp_local, success, obj_pose, mesh_verts,
+                              grasp_local, success, grasp_widths,
+                              obj_pose, mesh_verts,
                               n_points, table_surface_z=table_z)
         np.savez_compressed(os.path.join(out_dir, f"{i:03d}.npz"), **sample)
         total_pos += int(sample["confidence"].sum())
@@ -338,8 +419,8 @@ def main():
     parser.add_argument("--out_root", default="data/out")
     parser.add_argument("--category", default=None,
                         help="Process only this category (e.g. Mug)")
-    parser.add_argument("--n_views", type=int, default=36)
-    parser.add_argument("--n_points", type=int, default=20000)
+    parser.add_argument("--n_views", type=int, default=360)
+    parser.add_argument("--n_points", type=int, default=4096)
     args = parser.parse_args()
 
     with open(os.path.join(args.acronym_root, "manifest.json")) as f:

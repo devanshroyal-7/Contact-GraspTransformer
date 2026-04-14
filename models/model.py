@@ -11,7 +11,7 @@ class ContactGraspNet(nn.Module):
     """
     def __init__(self, backbone_type='pn2'):
         super().__init__()
-        self.head_in_channels = 128
+        self.head_in_channels = 64
         
         if backbone_type == 'pn2':
             self.backbone = SimplePointNet2(out_channels=self.head_in_channels)

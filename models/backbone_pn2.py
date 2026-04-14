@@ -148,17 +148,17 @@ class SimplePointNet2(nn.Module):
     A PointNet++ U-Net Architecture Backbone with Set Abstraction and Feature Propagation.
     Designed to return per-point features mapping back to the original N points.
     """
-    def __init__(self, out_channels=128):
+    def __init__(self, out_channels=64):
         super().__init__()
-        self.sa1 = PointNetSetAbstraction(1024, 0.1, 32, 3 + 3, [32, 32, 64], False)
-        self.sa2 = PointNetSetAbstraction(256, 0.2, 32, 64 + 3, [64, 64, 128], False)
-        self.sa3 = PointNetSetAbstraction(64, 0.4, 32, 128 + 3, [128, 128, 256], False)
-        self.sa4 = PointNetSetAbstraction(16, 0.8, 32, 256 + 3, [256, 256, 512], False)
+        self.sa1 = PointNetSetAbstraction(512, 0.1, 32, 3 + 3, [32, 32, 64], False)
+        self.sa2 = PointNetSetAbstraction(128, 0.2, 32, 64 + 3, [64, 64, 128], False)
+        self.sa3 = PointNetSetAbstraction(32, 0.4, 32, 128 + 3, [128, 128, 256], False)
+        self.sa4 = PointNetSetAbstraction(8, 0.8, 32, 256 + 3, [256, 256, 512], False)
         
         self.fp4 = PointNetFeaturePropagation(512 + 256, [256, 256])
-        self.fp3 = PointNetFeaturePropagation(256 + 128, [256, 256])
-        self.fp2 = PointNetFeaturePropagation(256 + 64,  [256, 128])
-        self.fp1 = PointNetFeaturePropagation(128,       [128, 128, out_channels])
+        self.fp3 = PointNetFeaturePropagation(256 + 128, [256, 128])
+        self.fp2 = PointNetFeaturePropagation(128 + 64,  [128, 64])
+        self.fp1 = PointNetFeaturePropagation(64,        [64, 64, out_channels])
 
     def forward(self, xyz):
         xyz = xyz.transpose(1, 2).contiguous() # (B, 3, N)

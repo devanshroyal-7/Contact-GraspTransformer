@@ -28,6 +28,31 @@ def build_scheduler(optimizer, cfg):
     return None
 
 
+def evaluate(model, criterion, val_loader, device):
+    model.eval()
+    total_loss = 0.0
+    total_conf = 0.0
+    total_adds = 0.0
+    total_width = 0.0
+    with torch.no_grad():
+        for batch in val_loader:
+            points = batch["points"].to(device)
+            targets = {k: v.to(device) for k, v in batch.items()}
+            preds = model(points)
+            loss_dict = criterion(preds, targets)
+            total_loss += loss_dict["loss"].item()
+            total_conf += loss_dict["l_conf"].item()
+            total_adds += loss_dict["l_adds"].item()
+            total_width += loss_dict["l_width"].item()
+    n = max(len(val_loader), 1)
+    return {
+        "val/loss": total_loss / n,
+        "val/loss_conf": total_conf / n,
+        "val/loss_adds": total_adds / n,
+        "val/loss_width": total_width / n,
+    }
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_dir", type=str, default="data/out", help="Path to datasets")
@@ -42,7 +67,7 @@ def main():
     parser.add_argument("--grad_clip_max_norm", type=float, default=0.0, help="0 disables gradient clipping")
     parser.add_argument("--loss_adds_weight", type=float, default=10.0)
     parser.add_argument("--loss_width_weight", type=float, default=1.0)
-    parser.add_argument("--num_points", type=int, default=20000)
+    parser.add_argument("--num_points", type=int, default=4096)
     parser.add_argument("--overfit_one_batch", action="store_true", help="Test flag")
     args = parser.parse_args()
 
@@ -61,8 +86,14 @@ def main():
     scheduler = build_scheduler(optimizer, cfg)
 
     if os.path.exists(cfg.data_dir) and len(os.listdir(cfg.data_dir)) > 0:
-        dataset = CGNDataset(cfg.data_dir, num_points=cfg.num_points)
-        train_loader = DataLoader(dataset, batch_size=cfg.batch_size, shuffle=True)
+        train_dataset = CGNDataset(cfg.data_dir, num_points=cfg.num_points,
+                                   split="train")
+        val_dataset = CGNDataset(cfg.data_dir, num_points=cfg.num_points,
+                                 split="val")
+        train_loader = DataLoader(train_dataset, batch_size=cfg.batch_size,
+                                  shuffle=True)
+        val_loader = DataLoader(val_dataset, batch_size=cfg.batch_size,
+                                shuffle=False)
     else:
         print("No real data found. Using mock random data to verify pipeline builds.")
         n = cfg.num_points
@@ -77,6 +108,7 @@ def main():
             for _ in range(8)
         ]
         train_loader = DataLoader(mock_data, batch_size=cfg.batch_size)
+        val_loader = train_loader
 
     for epoch in range(cfg.epochs):
         model.train()
@@ -116,19 +148,23 @@ def main():
         if scheduler is not None:
             scheduler.step()
 
-        n_batches = len(train_loader)
+        n_batches = max(len(train_loader), 1)
         metrics = {
-            "val/loss": total_loss / n_batches,
+            "train/loss": total_loss / n_batches,
             "train/loss_conf": total_conf / n_batches,
             "train/loss_adds": total_adds / n_batches,
             "train/loss_width": total_width / n_batches,
             "train/lr": optimizer.param_groups[0]["lr"],
             "epoch": epoch,
         }
+
+        val_metrics = evaluate(model, criterion, val_loader, device)
+        metrics.update(val_metrics)
         wandb.log(metrics)
 
         if not args.overfit_one_batch:
-            print(f"Epoch {epoch} | Avg Loss: {total_loss / n_batches:.4f}")
+            print(f"Epoch {epoch} | Train: {total_loss / n_batches:.4f} "
+                  f"| Val: {val_metrics['val/loss']:.4f}")
 
     print("Training finished.")
     run.finish()
