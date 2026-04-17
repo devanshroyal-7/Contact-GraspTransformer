@@ -3,7 +3,7 @@ import torch
 import argparse
 import wandb
 from torch.utils.data import DataLoader
-from data.dataset import CGNDataset
+from data.dataset import CGNDataset, resolve_train_cap
 from models.model import ContactGraspNet
 from loss import CGNLoss
 
@@ -69,10 +69,45 @@ def main():
     parser.add_argument("--loss_width_weight", type=float, default=1.0)
     parser.add_argument("--num_points", type=int, default=4096)
     parser.add_argument("--overfit_one_batch", action="store_true", help="Test flag")
+    parser.add_argument("--manifest", type=str,
+                        default="data/acronym/manifest.json",
+                        help="Path to manifest.json")
+    parser.add_argument("--budgets", type=str,
+                        default="data/acronym/training_budgets.json",
+                        help="Path to training_budgets.json")
+    parser.add_argument("--train_objects_per_category", type=int, default=None,
+                        help="Override the budget preset (cap on train meshes per category)")
+    parser.add_argument("--budget_preset", type=str, default=None,
+                        help="Named preset from training_budgets.json "
+                             "(overrides active_preset; e.g. 1_per_cat, 2_per_cat, 5_per_cat, 10_per_cat)")
     args = parser.parse_args()
 
     run = wandb.init(project="cgn-sweep", config=vars(args))
     cfg = wandb.config
+
+    def _fmt(v):
+        if isinstance(v, float):
+            return f"{v:g}"
+        return str(v)
+
+    def _cfg_get(name, default=None):
+        try:
+            return cfg[name]
+        except (KeyError, AttributeError):
+            return getattr(cfg, name, default)
+
+    gc = _cfg_get("grad_clip_max_norm", 0) or 0
+    gc_tag = f"gc{_fmt(gc)}" if gc > 0 else "gcOff"
+    run_name = "_".join([
+        str(_cfg_get("backbone")),
+        f"bs{_cfg_get('batch_size')}",
+        f"lr{_fmt(_cfg_get('lr'))}",
+        gc_tag,
+    ])
+
+    run.name = run_name
+    run.tags = list(run.tags or []) + [f"backbone:{_cfg_get('backbone')}"]
+    print(f"W&B run name: {run_name}")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using {cfg.backbone} backbone on {device}")
@@ -85,15 +120,44 @@ def main():
     optimizer = build_optimizer(model, cfg)
     scheduler = build_scheduler(optimizer, cfg)
 
-    if os.path.exists(cfg.data_dir) and len(os.listdir(cfg.data_dir)) > 0:
-        train_dataset = CGNDataset(cfg.data_dir, num_points=cfg.num_points,
-                                   split="train")
-        val_dataset = CGNDataset(cfg.data_dir, num_points=cfg.num_points,
-                                 split="val")
+    if (os.path.exists(cfg.data_dir) and len(os.listdir(cfg.data_dir)) > 0
+            and os.path.exists(cfg.manifest)):
+        try:
+            active_cap = resolve_train_cap(
+                cfg.budgets,
+                override=cfg.train_objects_per_category,
+                preset=cfg.budget_preset,
+            )
+            wandb.config.update({"active_train_objects_per_category": active_cap},
+                                allow_val_change=True)
+            print(f"Training cap: {active_cap} object(s) per category")
+        except Exception as e:
+            print(f"Warning: could not resolve training budget ({e})")
+
+        ds_kwargs = dict(
+            data_dir=cfg.data_dir,
+            manifest_path=cfg.manifest,
+            budget_path=cfg.budgets,
+            num_points=cfg.num_points,
+            train_objects_per_category=cfg.train_objects_per_category,
+            budget_preset=cfg.budget_preset,
+        )
+        train_dataset = CGNDataset(split="train", **ds_kwargs)
+        val_dataset   = CGNDataset(split="val",   **ds_kwargs)
+        test_dataset  = CGNDataset(split="test",
+                                    data_dir=cfg.data_dir,
+                                    manifest_path=cfg.manifest,
+                                    budget_path=cfg.budgets,
+                                    num_points=cfg.num_points)
+        print(f"Datasets -> train={len(train_dataset)}  "
+              f"val={len(val_dataset)}  test={len(test_dataset)}")
         train_loader = DataLoader(train_dataset, batch_size=cfg.batch_size,
                                   shuffle=True)
         val_loader = DataLoader(val_dataset, batch_size=cfg.batch_size,
                                 shuffle=False)
+        test_loader = (DataLoader(test_dataset, batch_size=cfg.batch_size,
+                                   shuffle=False)
+                       if len(test_dataset) > 0 else None)
     else:
         print("No real data found. Using mock random data to verify pipeline builds.")
         n = cfg.num_points
@@ -109,6 +173,7 @@ def main():
         ]
         train_loader = DataLoader(mock_data, batch_size=cfg.batch_size)
         val_loader = train_loader
+        test_loader = None
 
     for epoch in range(cfg.epochs):
         model.train()
@@ -165,6 +230,13 @@ def main():
         if not args.overfit_one_batch:
             print(f"Epoch {epoch} | Train: {total_loss / n_batches:.4f} "
                   f"| Val: {val_metrics['val/loss']:.4f}")
+
+    if test_loader is not None:
+        test_metrics = evaluate(model, criterion, test_loader, device)
+        test_metrics = {k.replace("val/", "test/"): v for k, v in test_metrics.items()}
+        wandb.log(test_metrics)
+        print("Test set (held-out meshes): "
+              f"loss={test_metrics['test/loss']:.4f}")
 
     print("Training finished.")
     run.finish()

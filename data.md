@@ -4,10 +4,70 @@
 
 ```
 data/acronym/
-├── manifest.json            5 objects: Mug, Bowl, Bottle, Cup, Pan
+├── manifest.json            180 objects (15 categories x 12: 10 train + 2 test)
+├── training_budgets.json    caps on train meshes per category (1/2/5/10)
 ├── meshes/<Category>/*.obj  raw ShapeNet meshes
 └── grasps/*.h5              grasp transforms + success labels
 ```
+
+The 15 categories are:
+`Mug, Bowl, Bottle, Cup, Pan, Book, Vase, CellPhone, Pencil, ToyFigure,
+Knife, FoodItem, Camera, SodaCan, WineBottle`.
+
+### Rebuilding the subset from the external ACRONYM checkout
+
+```bash
+python data/acronym/build_acronym_subset.py [--dry_run]
+```
+
+This script reads `/home/devansh/dev/contact_graspnet_pytorch/acronym/`,
+deterministically picks 12 unique meshes per category (smallest scale
+per mesh hash, sorted lexicographically), copies them into
+`data/acronym/meshes/` and `data/acronym/grasps/`, removes any stale
+files not in the new selection, and writes `manifest.json`.
+
+### `manifest.json` schema
+
+One entry per object. Every entry has `split` ("train" or "test") and
+a `rank` field. `rank` is 1..10 within train and 1..2 within test.
+
+```json
+{
+  "category": "Mug",
+  "mesh_hash": "2997f21fa426e18a6ab1a25d0e8f3590",
+  "mesh_path": "meshes/Mug/2997f21fa426e18a6ab1a25d0e8f3590.obj",
+  "grasp_file": "Mug_2997f21fa426e18a6ab1a25d0e8f3590_0.021360488699532477.h5",
+  "scale": 0.0213604887,
+  "split": "train",
+  "rank": 1
+}
+```
+
+### `training_budgets.json` schema
+
+Controls how many **training** meshes per category are actually used
+at train time. The test split always uses both test meshes per category.
+
+```json
+{
+  "active_preset": "5_per_cat",
+  "presets": {
+    "1_per_cat":  {"train_objects_per_category": 1},
+    "2_per_cat":  {"train_objects_per_category": 2},
+    "5_per_cat":  {"train_objects_per_category": 5},
+    "10_per_cat": {"train_objects_per_category": 10}
+  },
+  "categories": ["Mug", "Bowl", ...]
+}
+```
+
+At train time the active cap is resolved in this order:
+
+1. `--train_objects_per_category` CLI flag (integer override).
+2. `--budget_preset` CLI flag (named preset).
+3. `active_preset` in the JSON.
+
+The active cap is logged to W&B as `active_train_objects_per_category`.
 
 ## Pipeline overview (`data/generate_data.py`)
 
@@ -114,14 +174,38 @@ data/acronym/
 
 ```
 data/out/
-├── Mug/
-│   ├── 000.npz
-│   ├── 001.npz
-│   └── ...          (36 views)
-├── Bowl/
-├── Bottle/
-├── Cup/
-└── Pan/
+├── train/
+│   ├── Mug/
+│   │   ├── <mesh_hash_1>/
+│   │   │   ├── 000.npz
+│   │   │   ├── 001.npz
+│   │   │   └── ...   (360 views)
+│   │   ├── <mesh_hash_2>/
+│   │   └── ...               (up to 10 meshes)
+│   ├── Bowl/
+│   └── ...                    (15 categories)
+└── test/
+    ├── Mug/
+    │   ├── <mesh_hash_train11>/
+    │   └── <mesh_hash_train12>/    (2 held-out meshes per category)
+    ├── Bowl/
+    └── ...
+```
+
+Rendering CLI:
+
+```bash
+# Full render (180 meshes x 360 views - substantial compute + disk)
+python data/generate_data.py
+
+# Only train meshes
+python data/generate_data.py --splits train
+
+# Only one category
+python data/generate_data.py --category Mug
+
+# Single mesh (debug)
+python data/generate_data.py --mesh_hash 2997f21fa426e18a6ab1a25d0e8f3590
 ```
 
 ## .npz keys per file
@@ -148,3 +232,28 @@ data/out/
 - **Object mask**: Points are classified as object vs table by checking their
   world-frame z coordinate. The KDTree is built from object points only,
   preventing grasp labels from leaking onto the table.
+
+## Training-time dataset selection
+
+`CGNDataset` (see `data/dataset.py`) reads `manifest.json` + the
+budget JSON and filters the file list accordingly:
+
+- `split="train"`: mesh entries with `split=="train"` and
+  `rank <= train_objects_per_category`. A random fraction of the
+  **views** is held back as `split="val"` (same meshes, different
+  renders) for monitoring training.
+- `split="test"`: mesh entries with `split=="test"` - completely
+  unseen meshes, used to measure novel-instance generalization.
+
+Training CLI:
+
+```bash
+# Use the active preset from training_budgets.json (5_per_cat by default)
+python train.py
+
+# Explicit preset
+python train.py --budget_preset 2_per_cat
+
+# Numeric override (wins over preset)
+python train.py --train_objects_per_category 1
+```

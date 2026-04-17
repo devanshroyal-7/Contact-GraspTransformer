@@ -1,0 +1,14 @@
+{
+  "active_preset": "5_per_cat",
+  "presets": {
+    "1_per_cat":  {"train_objects_per_category": 1},
+    "2_per_cat":  {"train_objects_per_category": 2},
+    "5_per_cat":  {"train_objects_per_category": 5},
+    "10_per_cat": {"train_objects_per_category": 10}
+  },
+  "categories": [
+    "Mug", "Bowl", "Bottle", "Cup", "Pan",
+    "Book", "Vase", "CellPhone", "Pencil", "ToyFigure",
+    "Knife", "FoodItem", "Camera", "SodaCan", "WineBottle"
+  ]
+}

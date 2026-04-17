@@ -1,32 +1,1622 @@
 [
   {
     "category": "Mug",
-    "grasp_file": "Mug_2997f21fa426e18a6ab1a25d0e8f3590_0.021360488699532477.h5",
+    "mesh_hash": "10f6e09036350e92b3f21f1137c3c347",
+    "mesh_path": "meshes/Mug/10f6e09036350e92b3f21f1137c3c347.obj",
+    "grasp_file": "Mug_10f6e09036350e92b3f21f1137c3c347_0.0002682457830986903.h5",
+    "scale": 0.0002682457830986903,
+    "split": "train",
+    "rank": 1
+  },
+  {
+    "category": "Mug",
+    "mesh_hash": "128ecbc10df5b05d96eaf1340564a4de",
+    "mesh_path": "meshes/Mug/128ecbc10df5b05d96eaf1340564a4de.obj",
+    "grasp_file": "Mug_128ecbc10df5b05d96eaf1340564a4de_0.0013421115752322193.h5",
+    "scale": 0.0013421115752322193,
+    "split": "train",
+    "rank": 2
+  },
+  {
+    "category": "Mug",
+    "mesh_hash": "159e56c18906830278d8f8c02c47cde0",
+    "mesh_path": "meshes/Mug/159e56c18906830278d8f8c02c47cde0.obj",
+    "grasp_file": "Mug_159e56c18906830278d8f8c02c47cde0_0.02613657211507507.h5",
+    "scale": 0.02613657211507507,
+    "split": "train",
+    "rank": 3
+  },
+  {
+    "category": "Mug",
+    "mesh_hash": "187859d3c3a2fd23f54e1b6f41fdd78a",
+    "mesh_path": "meshes/Mug/187859d3c3a2fd23f54e1b6f41fdd78a.obj",
+    "grasp_file": "Mug_187859d3c3a2fd23f54e1b6f41fdd78a_0.025693213682502512.h5",
+    "scale": 0.025693213682502512,
+    "split": "train",
+    "rank": 4
+  },
+  {
+    "category": "Mug",
+    "mesh_hash": "1ea9ea99ac8ed233bf355ac8109b9988",
+    "mesh_path": "meshes/Mug/1ea9ea99ac8ed233bf355ac8109b9988.obj",
+    "grasp_file": "Mug_1ea9ea99ac8ed233bf355ac8109b9988_0.00015690117591903456.h5",
+    "scale": 0.00015690117591903456,
+    "split": "train",
+    "rank": 5
+  },
+  {
+    "category": "Mug",
+    "mesh_hash": "2073dd06f62b46d43c8079bde16af00d",
+    "mesh_path": "meshes/Mug/2073dd06f62b46d43c8079bde16af00d.obj",
+    "grasp_file": "Mug_2073dd06f62b46d43c8079bde16af00d_0.0016645897945526554.h5",
+    "scale": 0.0016645897945526554,
+    "split": "train",
+    "rank": 6
+  },
+  {
+    "category": "Mug",
+    "mesh_hash": "23fb2a2231263e261a9ac99425d3b306",
+    "mesh_path": "meshes/Mug/23fb2a2231263e261a9ac99425d3b306.obj",
+    "grasp_file": "Mug_23fb2a2231263e261a9ac99425d3b306_0.00038748778493825193.h5",
+    "scale": 0.00038748778493825193,
+    "split": "train",
+    "rank": 7
+  },
+  {
+    "category": "Mug",
+    "mesh_hash": "24651c3767aa5089e19f4cee87249aca",
+    "mesh_path": "meshes/Mug/24651c3767aa5089e19f4cee87249aca.obj",
+    "grasp_file": "Mug_24651c3767aa5089e19f4cee87249aca_0.0001694943312161994.h5",
+    "scale": 0.0001694943312161994,
+    "split": "train",
+    "rank": 8
+  },
+  {
+    "category": "Mug",
+    "mesh_hash": "2997f21fa426e18a6ab1a25d0e8f3590",
     "mesh_path": "meshes/Mug/2997f21fa426e18a6ab1a25d0e8f3590.obj",
-    "scale": 0.0213604887
+    "grasp_file": "Mug_2997f21fa426e18a6ab1a25d0e8f3590_0.01929277648152453.h5",
+    "scale": 0.01929277648152453,
+    "split": "train",
+    "rank": 9
+  },
+  {
+    "category": "Mug",
+    "mesh_hash": "336122c3105440d193e42e2720468bf0",
+    "mesh_path": "meshes/Mug/336122c3105440d193e42e2720468bf0.obj",
+    "grasp_file": "Mug_336122c3105440d193e42e2720468bf0_0.023509882862863946.h5",
+    "scale": 0.023509882862863946,
+    "split": "train",
+    "rank": 10
+  },
+  {
+    "category": "Mug",
+    "mesh_hash": "37f56901a07da69dac6b8e58caf61f95",
+    "mesh_path": "meshes/Mug/37f56901a07da69dac6b8e58caf61f95.obj",
+    "grasp_file": "Mug_37f56901a07da69dac6b8e58caf61f95_0.015336398375355305.h5",
+    "scale": 0.015336398375355305,
+    "split": "test",
+    "rank": 1
+  },
+  {
+    "category": "Mug",
+    "mesh_hash": "40f9a6cc6b2c3b3a78060a3a3a55e18f",
+    "mesh_path": "meshes/Mug/40f9a6cc6b2c3b3a78060a3a3a55e18f.obj",
+    "grasp_file": "Mug_40f9a6cc6b2c3b3a78060a3a3a55e18f_0.0006670441940038386.h5",
+    "scale": 0.0006670441940038386,
+    "split": "test",
+    "rank": 2
   },
   {
     "category": "Bowl",
-    "grasp_file": "Bowl_50ad83141272138a606b9bf35534b61b_0.00014387602753246012.h5",
+    "mesh_hash": "1be987c137d37f0b7c15f7bdb6fa82dd",
+    "mesh_path": "meshes/Bowl/1be987c137d37f0b7c15f7bdb6fa82dd.obj",
+    "grasp_file": "Bowl_1be987c137d37f0b7c15f7bdb6fa82dd_0.009838107210871158.h5",
+    "scale": 0.009838107210871158,
+    "split": "train",
+    "rank": 1
+  },
+  {
+    "category": "Bowl",
+    "mesh_hash": "2eb4cfc59205bb3a147c505998f546dd",
+    "mesh_path": "meshes/Bowl/2eb4cfc59205bb3a147c505998f546dd.obj",
+    "grasp_file": "Bowl_2eb4cfc59205bb3a147c505998f546dd_0.0002521142099500403.h5",
+    "scale": 0.0002521142099500403,
+    "split": "train",
+    "rank": 2
+  },
+  {
+    "category": "Bowl",
+    "mesh_hash": "2efc35a3625fa50961a9876fa6384765",
+    "mesh_path": "meshes/Bowl/2efc35a3625fa50961a9876fa6384765.obj",
+    "grasp_file": "Bowl_2efc35a3625fa50961a9876fa6384765_0.012449533111417973.h5",
+    "scale": 0.012449533111417973,
+    "split": "train",
+    "rank": 3
+  },
+  {
+    "category": "Bowl",
+    "mesh_hash": "38af522494d535151f6a5b0146bf3030",
+    "mesh_path": "meshes/Bowl/38af522494d535151f6a5b0146bf3030.obj",
+    "grasp_file": "Bowl_38af522494d535151f6a5b0146bf3030_0.006110386860678404.h5",
+    "scale": 0.006110386860678404,
+    "split": "train",
+    "rank": 4
+  },
+  {
+    "category": "Bowl",
+    "mesh_hash": "4417f06a1a1d213f4b6cec3185574478",
+    "mesh_path": "meshes/Bowl/4417f06a1a1d213f4b6cec3185574478.obj",
+    "grasp_file": "Bowl_4417f06a1a1d213f4b6cec3185574478_0.000410325520140191.h5",
+    "scale": 0.000410325520140191,
+    "split": "train",
+    "rank": 5
+  },
+  {
+    "category": "Bowl",
+    "mesh_hash": "4845731dbf7522b07492cbf7d8bec255",
+    "mesh_path": "meshes/Bowl/4845731dbf7522b07492cbf7d8bec255.obj",
+    "grasp_file": "Bowl_4845731dbf7522b07492cbf7d8bec255_0.012225604877615648.h5",
+    "scale": 0.012225604877615648,
+    "split": "train",
+    "rank": 6
+  },
+  {
+    "category": "Bowl",
+    "mesh_hash": "49a0a84ee5a91344b11c5cce13f76151",
+    "mesh_path": "meshes/Bowl/49a0a84ee5a91344b11c5cce13f76151.obj",
+    "grasp_file": "Bowl_49a0a84ee5a91344b11c5cce13f76151_0.006086002735352637.h5",
+    "scale": 0.006086002735352637,
+    "split": "train",
+    "rank": 7
+  },
+  {
+    "category": "Bowl",
+    "mesh_hash": "4b93a81c3534e56d19620b61f6587b3e",
+    "mesh_path": "meshes/Bowl/4b93a81c3534e56d19620b61f6587b3e.obj",
+    "grasp_file": "Bowl_4b93a81c3534e56d19620b61f6587b3e_0.009923440380211682.h5",
+    "scale": 0.009923440380211682,
+    "split": "train",
+    "rank": 8
+  },
+  {
+    "category": "Bowl",
+    "mesh_hash": "4be4184845972fba5ea36d5a57a5a3bb",
+    "mesh_path": "meshes/Bowl/4be4184845972fba5ea36d5a57a5a3bb.obj",
+    "grasp_file": "Bowl_4be4184845972fba5ea36d5a57a5a3bb_0.0006308776895943304.h5",
+    "scale": 0.0006308776895943304,
+    "split": "train",
+    "rank": 9
+  },
+  {
+    "category": "Bowl",
+    "mesh_hash": "4eefe941048189bdb8046e84ebdc62d2",
+    "mesh_path": "meshes/Bowl/4eefe941048189bdb8046e84ebdc62d2.obj",
+    "grasp_file": "Bowl_4eefe941048189bdb8046e84ebdc62d2_0.009581839709456355.h5",
+    "scale": 0.009581839709456355,
+    "split": "train",
+    "rank": 10
+  },
+  {
+    "category": "Bowl",
+    "mesh_hash": "50ad83141272138a606b9bf35534b61b",
     "mesh_path": "meshes/Bowl/50ad83141272138a606b9bf35534b61b.obj",
-    "scale": 0.000143876
+    "grasp_file": "Bowl_50ad83141272138a606b9bf35534b61b_0.00014387602753246012.h5",
+    "scale": 0.00014387602753246012,
+    "split": "test",
+    "rank": 1
+  },
+  {
+    "category": "Bowl",
+    "mesh_hash": "518833fb88d143ddee8f0f6d51f8e71b",
+    "mesh_path": "meshes/Bowl/518833fb88d143ddee8f0f6d51f8e71b.obj",
+    "grasp_file": "Bowl_518833fb88d143ddee8f0f6d51f8e71b_0.0036908617103391986.h5",
+    "scale": 0.0036908617103391986,
+    "split": "test",
+    "rank": 2
   },
   {
     "category": "Bottle",
-    "grasp_file": "Bottle_244894af3ba967ccd957eaf7f4edb205_0.012953570261294404.h5",
+    "mesh_hash": "10d3d5961e00b2133ff038bc77759685",
+    "mesh_path": "meshes/Bottle/10d3d5961e00b2133ff038bc77759685.obj",
+    "grasp_file": "Bottle_10d3d5961e00b2133ff038bc77759685_0.015613054513295678.h5",
+    "scale": 0.015613054513295678,
+    "split": "train",
+    "rank": 1
+  },
+  {
+    "category": "Bottle",
+    "mesh_hash": "15787789482f045d8add95bf56d3d2fa",
+    "mesh_path": "meshes/Bottle/15787789482f045d8add95bf56d3d2fa.obj",
+    "grasp_file": "Bottle_15787789482f045d8add95bf56d3d2fa_0.010392391422627425.h5",
+    "scale": 0.010392391422627425,
+    "split": "train",
+    "rank": 2
+  },
+  {
+    "category": "Bottle",
+    "mesh_hash": "1d4093ad2dfad9df24be2e4f911ee4af",
+    "mesh_path": "meshes/Bottle/1d4093ad2dfad9df24be2e4f911ee4af.obj",
+    "grasp_file": "Bottle_1d4093ad2dfad9df24be2e4f911ee4af_0.00037729937993450367.h5",
+    "scale": 0.00037729937993450367,
+    "split": "train",
+    "rank": 3
+  },
+  {
+    "category": "Bottle",
+    "mesh_hash": "1d4480abe9aa45ce51a99c0e19a8a54",
+    "mesh_path": "meshes/Bottle/1d4480abe9aa45ce51a99c0e19a8a54.obj",
+    "grasp_file": "Bottle_1d4480abe9aa45ce51a99c0e19a8a54_0.0005973591384753042.h5",
+    "scale": 0.0005973591384753042,
+    "split": "train",
+    "rank": 4
+  },
+  {
+    "category": "Bottle",
+    "mesh_hash": "20b7adb178ea2c71d8892a9c05c4aa0e",
+    "mesh_path": "meshes/Bottle/20b7adb178ea2c71d8892a9c05c4aa0e.obj",
+    "grasp_file": "Bottle_20b7adb178ea2c71d8892a9c05c4aa0e_0.016952118197404522.h5",
+    "scale": 0.016952118197404522,
+    "split": "train",
+    "rank": 5
+  },
+  {
+    "category": "Bottle",
+    "mesh_hash": "244894af3ba967ccd957eaf7f4edb205",
     "mesh_path": "meshes/Bottle/244894af3ba967ccd957eaf7f4edb205.obj",
-    "scale": 0.0129535703
+    "grasp_file": "Bottle_244894af3ba967ccd957eaf7f4edb205_0.012953570261294404.h5",
+    "scale": 0.012953570261294404,
+    "split": "train",
+    "rank": 6
+  },
+  {
+    "category": "Bottle",
+    "mesh_hash": "2d3f7082ad6d293daf6843c094838b08",
+    "mesh_path": "meshes/Bottle/2d3f7082ad6d293daf6843c094838b08.obj",
+    "grasp_file": "Bottle_2d3f7082ad6d293daf6843c094838b08_0.011877954103742136.h5",
+    "scale": 0.011877954103742136,
+    "split": "train",
+    "rank": 7
+  },
+  {
+    "category": "Bottle",
+    "mesh_hash": "3108a736282eec1bc58e834f0b160845",
+    "mesh_path": "meshes/Bottle/3108a736282eec1bc58e834f0b160845.obj",
+    "grasp_file": "Bottle_3108a736282eec1bc58e834f0b160845_0.014738534305634038.h5",
+    "scale": 0.014738534305634038,
+    "split": "train",
+    "rank": 8
+  },
+  {
+    "category": "Bottle",
+    "mesh_hash": "3702fc385b6c7708fc33503fd88ecb34",
+    "mesh_path": "meshes/Bottle/3702fc385b6c7708fc33503fd88ecb34.obj",
+    "grasp_file": "Bottle_3702fc385b6c7708fc33503fd88ecb34_0.005892218619902628.h5",
+    "scale": 0.005892218619902628,
+    "split": "train",
+    "rank": 9
+  },
+  {
+    "category": "Bottle",
+    "mesh_hash": "371b604f78300e02d76ab6ff59fe7e10",
+    "mesh_path": "meshes/Bottle/371b604f78300e02d76ab6ff59fe7e10.obj",
+    "grasp_file": "Bottle_371b604f78300e02d76ab6ff59fe7e10_0.0016918802801247606.h5",
+    "scale": 0.0016918802801247606,
+    "split": "train",
+    "rank": 10
+  },
+  {
+    "category": "Bottle",
+    "mesh_hash": "3ae3a9b74f96fef28fe15648f042f0d9",
+    "mesh_path": "meshes/Bottle/3ae3a9b74f96fef28fe15648f042f0d9.obj",
+    "grasp_file": "Bottle_3ae3a9b74f96fef28fe15648f042f0d9_0.0009644563249365577.h5",
+    "scale": 0.0009644563249365577,
+    "split": "test",
+    "rank": 1
+  },
+  {
+    "category": "Bottle",
+    "mesh_hash": "3dbd66422997d234b811ffed11682339",
+    "mesh_path": "meshes/Bottle/3dbd66422997d234b811ffed11682339.obj",
+    "grasp_file": "Bottle_3dbd66422997d234b811ffed11682339_0.02775306971572576.h5",
+    "scale": 0.02775306971572576,
+    "split": "test",
+    "rank": 2
   },
   {
     "category": "Cup",
-    "grasp_file": "Cup_106f8b5d2f2c777535c291801eaf5463_6.809242501596408e-05.h5",
+    "mesh_hash": "106f8b5d2f2c777535c291801eaf5463",
     "mesh_path": "meshes/Cup/106f8b5d2f2c777535c291801eaf5463.obj",
-    "scale": 6.80924e-05
+    "grasp_file": "Cup_106f8b5d2f2c777535c291801eaf5463_4.360359688753552e-05.h5",
+    "scale": 4.360359688753552e-05,
+    "split": "train",
+    "rank": 1
+  },
+  {
+    "category": "Cup",
+    "mesh_hash": "11705ed6a5b1ed37f83d00225df18677",
+    "mesh_path": "meshes/Cup/11705ed6a5b1ed37f83d00225df18677.obj",
+    "grasp_file": "Cup_11705ed6a5b1ed37f83d00225df18677_0.010592840481587155.h5",
+    "scale": 0.010592840481587155,
+    "split": "train",
+    "rank": 2
+  },
+  {
+    "category": "Cup",
+    "mesh_hash": "181846dba8cfa3e91fc277ccdec7582",
+    "mesh_path": "meshes/Cup/181846dba8cfa3e91fc277ccdec7582.obj",
+    "grasp_file": "Cup_181846dba8cfa3e91fc277ccdec7582_0.0064679472173287894.h5",
+    "scale": 0.0064679472173287894,
+    "split": "train",
+    "rank": 3
+  },
+  {
+    "category": "Cup",
+    "mesh_hash": "1e227771ef66abdb4212ff51b27f0221",
+    "mesh_path": "meshes/Cup/1e227771ef66abdb4212ff51b27f0221.obj",
+    "grasp_file": "Cup_1e227771ef66abdb4212ff51b27f0221_0.0023440009704761944.h5",
+    "scale": 0.0023440009704761944,
+    "split": "train",
+    "rank": 4
+  },
+  {
+    "category": "Cup",
+    "mesh_hash": "28ad16d5e8987f7f9599371049c32d38",
+    "mesh_path": "meshes/Cup/28ad16d5e8987f7f9599371049c32d38.obj",
+    "grasp_file": "Cup_28ad16d5e8987f7f9599371049c32d38_0.011886512816874839.h5",
+    "scale": 0.011886512816874839,
+    "split": "train",
+    "rank": 5
+  },
+  {
+    "category": "Cup",
+    "mesh_hash": "29e8781a8f6fdf1f13323fc4d5700bec",
+    "mesh_path": "meshes/Cup/29e8781a8f6fdf1f13323fc4d5700bec.obj",
+    "grasp_file": "Cup_29e8781a8f6fdf1f13323fc4d5700bec_0.00800080702376118.h5",
+    "scale": 0.00800080702376118,
+    "split": "train",
+    "rank": 6
+  },
+  {
+    "category": "Cup",
+    "mesh_hash": "39676deca53bdfe568bc0d099ddc0d94",
+    "mesh_path": "meshes/Cup/39676deca53bdfe568bc0d099ddc0d94.obj",
+    "grasp_file": "Cup_39676deca53bdfe568bc0d099ddc0d94_0.004652887409149244.h5",
+    "scale": 0.004652887409149244,
+    "split": "train",
+    "rank": 7
+  },
+  {
+    "category": "Cup",
+    "mesh_hash": "3a3b19614d545834cd321262c762dc9",
+    "mesh_path": "meshes/Cup/3a3b19614d545834cd321262c762dc9.obj",
+    "grasp_file": "Cup_3a3b19614d545834cd321262c762dc9_0.01421652918947878.h5",
+    "scale": 0.01421652918947878,
+    "split": "train",
+    "rank": 8
+  },
+  {
+    "category": "Cup",
+    "mesh_hash": "4361d71e2fb5206b3db3d3acce75295",
+    "mesh_path": "meshes/Cup/4361d71e2fb5206b3db3d3acce75295.obj",
+    "grasp_file": "Cup_4361d71e2fb5206b3db3d3acce75295_0.00032525859489042927.h5",
+    "scale": 0.00032525859489042927,
+    "split": "train",
+    "rank": 9
+  },
+  {
+    "category": "Cup",
+    "mesh_hash": "50ba488200fff98bdccf03d91dc58d38",
+    "mesh_path": "meshes/Cup/50ba488200fff98bdccf03d91dc58d38.obj",
+    "grasp_file": "Cup_50ba488200fff98bdccf03d91dc58d38_7.008028280741156e-05.h5",
+    "scale": 7.008028280741156e-05,
+    "split": "train",
+    "rank": 10
+  },
+  {
+    "category": "Cup",
+    "mesh_hash": "5d034d08b3afb0054212ff51b27f0221",
+    "mesh_path": "meshes/Cup/5d034d08b3afb0054212ff51b27f0221.obj",
+    "grasp_file": "Cup_5d034d08b3afb0054212ff51b27f0221_0.0030237987779352456.h5",
+    "scale": 0.0030237987779352456,
+    "split": "test",
+    "rank": 1
+  },
+  {
+    "category": "Cup",
+    "mesh_hash": "606d1ca3ca3cd8a9825c10ff30444226",
+    "mesh_path": "meshes/Cup/606d1ca3ca3cd8a9825c10ff30444226.obj",
+    "grasp_file": "Cup_606d1ca3ca3cd8a9825c10ff30444226_0.013595149657153692.h5",
+    "scale": 0.013595149657153692,
+    "split": "test",
+    "rank": 2
   },
   {
     "category": "Pan",
-    "grasp_file": "Pan_471fcc6a297e566b985620cba44cf716_0.011075909986682037.h5",
+    "mesh_hash": "1922e4fafd78b33a80360680c1602c7d",
+    "mesh_path": "meshes/Pan/1922e4fafd78b33a80360680c1602c7d.obj",
+    "grasp_file": "Pan_1922e4fafd78b33a80360680c1602c7d_4.818103173959078e-05.h5",
+    "scale": 4.818103173959078e-05,
+    "split": "train",
+    "rank": 1
+  },
+  {
+    "category": "Pan",
+    "mesh_hash": "284e5f15a88a83bc749d52b3e269018",
+    "mesh_path": "meshes/Pan/284e5f15a88a83bc749d52b3e269018.obj",
+    "grasp_file": "Pan_284e5f15a88a83bc749d52b3e269018_0.004318037242907772.h5",
+    "scale": 0.004318037242907772,
+    "split": "train",
+    "rank": 2
+  },
+  {
+    "category": "Pan",
+    "mesh_hash": "436e1ae9112384fbf4cc5d95933e54b",
+    "mesh_path": "meshes/Pan/436e1ae9112384fbf4cc5d95933e54b.obj",
+    "grasp_file": "Pan_436e1ae9112384fbf4cc5d95933e54b_0.009913434649349632.h5",
+    "scale": 0.009913434649349632,
+    "split": "train",
+    "rank": 3
+  },
+  {
+    "category": "Pan",
+    "mesh_hash": "471fcc6a297e566b985620cba44cf716",
     "mesh_path": "meshes/Pan/471fcc6a297e566b985620cba44cf716.obj",
-    "scale": 0.01107591
+    "grasp_file": "Pan_471fcc6a297e566b985620cba44cf716_0.011075909986682037.h5",
+    "scale": 0.011075909986682037,
+    "split": "train",
+    "rank": 4
+  },
+  {
+    "category": "Pan",
+    "mesh_hash": "47f8077df0ffcdeb80d7130c1957812e",
+    "mesh_path": "meshes/Pan/47f8077df0ffcdeb80d7130c1957812e.obj",
+    "grasp_file": "Pan_47f8077df0ffcdeb80d7130c1957812e_0.0010130003596293508.h5",
+    "scale": 0.0010130003596293508,
+    "split": "train",
+    "rank": 5
+  },
+  {
+    "category": "Pan",
+    "mesh_hash": "6bd3a97fa483fdf74aacbadccb7a240a",
+    "mesh_path": "meshes/Pan/6bd3a97fa483fdf74aacbadccb7a240a.obj",
+    "grasp_file": "Pan_6bd3a97fa483fdf74aacbadccb7a240a_0.010757311962387318.h5",
+    "scale": 0.010757311962387318,
+    "split": "train",
+    "rank": 6
+  },
+  {
+    "category": "Pan",
+    "mesh_hash": "8177715e3801cc09c4c35aa5dfb8543a",
+    "mesh_path": "meshes/Pan/8177715e3801cc09c4c35aa5dfb8543a.obj",
+    "grasp_file": "Pan_8177715e3801cc09c4c35aa5dfb8543a_0.01300199343576794.h5",
+    "scale": 0.01300199343576794,
+    "split": "train",
+    "rank": 7
+  },
+  {
+    "category": "Pan",
+    "mesh_hash": "8700ac31400f39646c1715a656a459af",
+    "mesh_path": "meshes/Pan/8700ac31400f39646c1715a656a459af.obj",
+    "grasp_file": "Pan_8700ac31400f39646c1715a656a459af_0.0010436370162219776.h5",
+    "scale": 0.0010436370162219776,
+    "split": "train",
+    "rank": 8
+  },
+  {
+    "category": "Pan",
+    "mesh_hash": "886833189fd5d75864d18951dba4fc84",
+    "mesh_path": "meshes/Pan/886833189fd5d75864d18951dba4fc84.obj",
+    "grasp_file": "Pan_886833189fd5d75864d18951dba4fc84_0.011453380579268735.h5",
+    "scale": 0.011453380579268735,
+    "split": "train",
+    "rank": 9
+  },
+  {
+    "category": "Pan",
+    "mesh_hash": "a5e0efaaf0ded23e88d29413a3dd87fd",
+    "mesh_path": "meshes/Pan/a5e0efaaf0ded23e88d29413a3dd87fd.obj",
+    "grasp_file": "Pan_a5e0efaaf0ded23e88d29413a3dd87fd_0.015462354788229816.h5",
+    "scale": 0.015462354788229816,
+    "split": "train",
+    "rank": 10
+  },
+  {
+    "category": "Pan",
+    "mesh_hash": "a8bd7d74e0513a4c985620cba44cf716",
+    "mesh_path": "meshes/Pan/a8bd7d74e0513a4c985620cba44cf716.obj",
+    "grasp_file": "Pan_a8bd7d74e0513a4c985620cba44cf716_0.01357004677197135.h5",
+    "scale": 0.01357004677197135,
+    "split": "test",
+    "rank": 1
+  },
+  {
+    "category": "Pan",
+    "mesh_hash": "ab9fb42873dbc978616812464c86290",
+    "mesh_path": "meshes/Pan/ab9fb42873dbc978616812464c86290.obj",
+    "grasp_file": "Pan_ab9fb42873dbc978616812464c86290_0.00016516142831559373.h5",
+    "scale": 0.00016516142831559373,
+    "split": "test",
+    "rank": 2
+  },
+  {
+    "category": "Book",
+    "mesh_hash": "11183af410a81c186f525e79a05bbcb3",
+    "mesh_path": "meshes/Book/11183af410a81c186f525e79a05bbcb3.obj",
+    "grasp_file": "Book_11183af410a81c186f525e79a05bbcb3_0.003430131761306427.h5",
+    "scale": 0.003430131761306427,
+    "split": "train",
+    "rank": 1
+  },
+  {
+    "category": "Book",
+    "mesh_hash": "13335c01414d6fd85af897847a7513ca",
+    "mesh_path": "meshes/Book/13335c01414d6fd85af897847a7513ca.obj",
+    "grasp_file": "Book_13335c01414d6fd85af897847a7513ca_0.010491006793418368.h5",
+    "scale": 0.010491006793418368,
+    "split": "train",
+    "rank": 2
+  },
+  {
+    "category": "Book",
+    "mesh_hash": "19f04c7aecfb05a3cc639cc85c8f16df",
+    "mesh_path": "meshes/Book/19f04c7aecfb05a3cc639cc85c8f16df.obj",
+    "grasp_file": "Book_19f04c7aecfb05a3cc639cc85c8f16df_0.0005882626684476562.h5",
+    "scale": 0.0005882626684476562,
+    "split": "train",
+    "rank": 3
+  },
+  {
+    "category": "Book",
+    "mesh_hash": "1d493a57a21833f2d92c7cdc3939488b",
+    "mesh_path": "meshes/Book/1d493a57a21833f2d92c7cdc3939488b.obj",
+    "grasp_file": "Book_1d493a57a21833f2d92c7cdc3939488b_0.01311887386650193.h5",
+    "scale": 0.01311887386650193,
+    "split": "train",
+    "rank": 4
+  },
+  {
+    "category": "Book",
+    "mesh_hash": "1e2dcb130b75c6c09251ef7f51226942",
+    "mesh_path": "meshes/Book/1e2dcb130b75c6c09251ef7f51226942.obj",
+    "grasp_file": "Book_1e2dcb130b75c6c09251ef7f51226942_0.00033307409606741454.h5",
+    "scale": 0.00033307409606741454,
+    "split": "train",
+    "rank": 5
+  },
+  {
+    "category": "Book",
+    "mesh_hash": "1fd8d3cdf525532b5b5a685c28abd3e",
+    "mesh_path": "meshes/Book/1fd8d3cdf525532b5b5a685c28abd3e.obj",
+    "grasp_file": "Book_1fd8d3cdf525532b5b5a685c28abd3e_0.00015178320425740706.h5",
+    "scale": 0.00015178320425740706,
+    "split": "train",
+    "rank": 6
+  },
+  {
+    "category": "Book",
+    "mesh_hash": "22b7066166d83798876972681d7d64db",
+    "mesh_path": "meshes/Book/22b7066166d83798876972681d7d64db.obj",
+    "grasp_file": "Book_22b7066166d83798876972681d7d64db_0.01159632436393706.h5",
+    "scale": 0.01159632436393706,
+    "split": "train",
+    "rank": 7
+  },
+  {
+    "category": "Book",
+    "mesh_hash": "236dcc97a135d37a79283d5c77809cc1",
+    "mesh_path": "meshes/Book/236dcc97a135d37a79283d5c77809cc1.obj",
+    "grasp_file": "Book_236dcc97a135d37a79283d5c77809cc1_0.0033971920921677225.h5",
+    "scale": 0.0033971920921677225,
+    "split": "train",
+    "rank": 8
+  },
+  {
+    "category": "Book",
+    "mesh_hash": "2394aad19bdb0ca8e751791317b66d8c",
+    "mesh_path": "meshes/Book/2394aad19bdb0ca8e751791317b66d8c.obj",
+    "grasp_file": "Book_2394aad19bdb0ca8e751791317b66d8c_0.00035281110119388587.h5",
+    "scale": 0.00035281110119388587,
+    "split": "train",
+    "rank": 9
+  },
+  {
+    "category": "Book",
+    "mesh_hash": "25dd6051429b804430a87f4918e4b66",
+    "mesh_path": "meshes/Book/25dd6051429b804430a87f4918e4b66.obj",
+    "grasp_file": "Book_25dd6051429b804430a87f4918e4b66_0.008906510236321177.h5",
+    "scale": 0.008906510236321177,
+    "split": "train",
+    "rank": 10
+  },
+  {
+    "category": "Book",
+    "mesh_hash": "2c3fff6bb2f03eeddec62a61accd35e7",
+    "mesh_path": "meshes/Book/2c3fff6bb2f03eeddec62a61accd35e7.obj",
+    "grasp_file": "Book_2c3fff6bb2f03eeddec62a61accd35e7_0.013021049080144908.h5",
+    "scale": 0.013021049080144908,
+    "split": "test",
+    "rank": 1
+  },
+  {
+    "category": "Book",
+    "mesh_hash": "2d3598f0e0a07de7ff8a6b1ceab25ae8",
+    "mesh_path": "meshes/Book/2d3598f0e0a07de7ff8a6b1ceab25ae8.obj",
+    "grasp_file": "Book_2d3598f0e0a07de7ff8a6b1ceab25ae8_0.008781803361090131.h5",
+    "scale": 0.008781803361090131,
+    "split": "test",
+    "rank": 2
+  },
+  {
+    "category": "Vase",
+    "mesh_hash": "12d643221a3edaa4ab361b6be63163da",
+    "mesh_path": "meshes/Vase/12d643221a3edaa4ab361b6be63163da.obj",
+    "grasp_file": "Vase_12d643221a3edaa4ab361b6be63163da_0.0025160518445363354.h5",
+    "scale": 0.0025160518445363354,
+    "split": "train",
+    "rank": 1
+  },
+  {
+    "category": "Vase",
+    "mesh_hash": "1654250bf1bc5a0131fef20bb2ae787e",
+    "mesh_path": "meshes/Vase/1654250bf1bc5a0131fef20bb2ae787e.obj",
+    "grasp_file": "Vase_1654250bf1bc5a0131fef20bb2ae787e_0.004276859009842059.h5",
+    "scale": 0.004276859009842059,
+    "split": "train",
+    "rank": 2
+  },
+  {
+    "category": "Vase",
+    "mesh_hash": "1666ce5ced647ed25d878ba9ec3c0d6a",
+    "mesh_path": "meshes/Vase/1666ce5ced647ed25d878ba9ec3c0d6a.obj",
+    "grasp_file": "Vase_1666ce5ced647ed25d878ba9ec3c0d6a_0.003530673121993713.h5",
+    "scale": 0.003530673121993713,
+    "split": "train",
+    "rank": 3
+  },
+  {
+    "category": "Vase",
+    "mesh_hash": "1730e6c6a37f19abefae06b5b9950833",
+    "mesh_path": "meshes/Vase/1730e6c6a37f19abefae06b5b9950833.obj",
+    "grasp_file": "Vase_1730e6c6a37f19abefae06b5b9950833_0.01268992650844866.h5",
+    "scale": 0.01268992650844866,
+    "split": "train",
+    "rank": 4
+  },
+  {
+    "category": "Vase",
+    "mesh_hash": "17b6b2b09458f1a435836c728d324152",
+    "mesh_path": "meshes/Vase/17b6b2b09458f1a435836c728d324152.obj",
+    "grasp_file": "Vase_17b6b2b09458f1a435836c728d324152_0.017067202123149224.h5",
+    "scale": 0.017067202123149224,
+    "split": "train",
+    "rank": 5
+  },
+  {
+    "category": "Vase",
+    "mesh_hash": "1a8f9295b44b48895e8c5748ca5ef3ea",
+    "mesh_path": "meshes/Vase/1a8f9295b44b48895e8c5748ca5ef3ea.obj",
+    "grasp_file": "Vase_1a8f9295b44b48895e8c5748ca5ef3ea_0.010557639267431888.h5",
+    "scale": 0.010557639267431888,
+    "split": "train",
+    "rank": 6
+  },
+  {
+    "category": "Vase",
+    "mesh_hash": "1b370d5326cb7da75318625c74026d6",
+    "mesh_path": "meshes/Vase/1b370d5326cb7da75318625c74026d6.obj",
+    "grasp_file": "Vase_1b370d5326cb7da75318625c74026d6_0.0372378510906676.h5",
+    "scale": 0.0372378510906676,
+    "split": "train",
+    "rank": 7
+  },
+  {
+    "category": "Vase",
+    "mesh_hash": "1d4a469bdb53d3f77a3f900e0a6f2d83",
+    "mesh_path": "meshes/Vase/1d4a469bdb53d3f77a3f900e0a6f2d83.obj",
+    "grasp_file": "Vase_1d4a469bdb53d3f77a3f900e0a6f2d83_0.026434475336319676.h5",
+    "scale": 0.026434475336319676,
+    "split": "train",
+    "rank": 8
+  },
+  {
+    "category": "Vase",
+    "mesh_hash": "1f5c74f0a55cbf9798d5fc0473d00a1c",
+    "mesh_path": "meshes/Vase/1f5c74f0a55cbf9798d5fc0473d00a1c.obj",
+    "grasp_file": "Vase_1f5c74f0a55cbf9798d5fc0473d00a1c_0.008792088803834886.h5",
+    "scale": 0.008792088803834886,
+    "split": "train",
+    "rank": 9
+  },
+  {
+    "category": "Vase",
+    "mesh_hash": "1f8a542e64756d349628684766da1bb4",
+    "mesh_path": "meshes/Vase/1f8a542e64756d349628684766da1bb4.obj",
+    "grasp_file": "Vase_1f8a542e64756d349628684766da1bb4_0.02713218310568822.h5",
+    "scale": 0.02713218310568822,
+    "split": "train",
+    "rank": 10
+  },
+  {
+    "category": "Vase",
+    "mesh_hash": "1febe89e0336d5bcee106795de609335",
+    "mesh_path": "meshes/Vase/1febe89e0336d5bcee106795de609335.obj",
+    "grasp_file": "Vase_1febe89e0336d5bcee106795de609335_0.01323200209138546.h5",
+    "scale": 0.01323200209138546,
+    "split": "test",
+    "rank": 1
+  },
+  {
+    "category": "Vase",
+    "mesh_hash": "2052e69d5151c5d535836c728d324152",
+    "mesh_path": "meshes/Vase/2052e69d5151c5d535836c728d324152.obj",
+    "grasp_file": "Vase_2052e69d5151c5d535836c728d324152_0.005813476877806016.h5",
+    "scale": 0.005813476877806016,
+    "split": "test",
+    "rank": 2
+  },
+  {
+    "category": "CellPhone",
+    "mesh_hash": "136ef91c95ca5c2d4b9a4e1a888c5f59",
+    "mesh_path": "meshes/CellPhone/136ef91c95ca5c2d4b9a4e1a888c5f59.obj",
+    "grasp_file": "CellPhone_136ef91c95ca5c2d4b9a4e1a888c5f59_0.0009443668484597486.h5",
+    "scale": 0.0009443668484597486,
+    "split": "train",
+    "rank": 1
+  },
+  {
+    "category": "CellPhone",
+    "mesh_hash": "1376723fa98487933f197465f86dea52",
+    "mesh_path": "meshes/CellPhone/1376723fa98487933f197465f86dea52.obj",
+    "grasp_file": "CellPhone_1376723fa98487933f197465f86dea52_0.007703130126885374.h5",
+    "scale": 0.007703130126885374,
+    "split": "train",
+    "rank": 2
+  },
+  {
+    "category": "CellPhone",
+    "mesh_hash": "14726c2482a092d3a9fe1734a6086750",
+    "mesh_path": "meshes/CellPhone/14726c2482a092d3a9fe1734a6086750.obj",
+    "grasp_file": "CellPhone_14726c2482a092d3a9fe1734a6086750_0.00015747183047978784.h5",
+    "scale": 0.00015747183047978784,
+    "split": "train",
+    "rank": 3
+  },
+  {
+    "category": "CellPhone",
+    "mesh_hash": "16c6403551e81a3eeedfca8b846d3b01",
+    "mesh_path": "meshes/CellPhone/16c6403551e81a3eeedfca8b846d3b01.obj",
+    "grasp_file": "CellPhone_16c6403551e81a3eeedfca8b846d3b01_0.00037642694972568396.h5",
+    "scale": 0.00037642694972568396,
+    "split": "train",
+    "rank": 4
+  },
+  {
+    "category": "CellPhone",
+    "mesh_hash": "18d6296006502cc7aa0a75782a86b0f3",
+    "mesh_path": "meshes/CellPhone/18d6296006502cc7aa0a75782a86b0f3.obj",
+    "grasp_file": "CellPhone_18d6296006502cc7aa0a75782a86b0f3_0.007077520953417639.h5",
+    "scale": 0.007077520953417639,
+    "split": "train",
+    "rank": 5
+  },
+  {
+    "category": "CellPhone",
+    "mesh_hash": "1984fb95afb6dae5804722305621f918",
+    "mesh_path": "meshes/CellPhone/1984fb95afb6dae5804722305621f918.obj",
+    "grasp_file": "CellPhone_1984fb95afb6dae5804722305621f918_0.000425687388158104.h5",
+    "scale": 0.000425687388158104,
+    "split": "train",
+    "rank": 6
+  },
+  {
+    "category": "CellPhone",
+    "mesh_hash": "1d7830c5d0322518d95aa859a460a9ec",
+    "mesh_path": "meshes/CellPhone/1d7830c5d0322518d95aa859a460a9ec.obj",
+    "grasp_file": "CellPhone_1d7830c5d0322518d95aa859a460a9ec_0.018364977508329154.h5",
+    "scale": 0.018364977508329154,
+    "split": "train",
+    "rank": 7
+  },
+  {
+    "category": "CellPhone",
+    "mesh_hash": "1f4e56064de606093e746e5f1700ce1a",
+    "mesh_path": "meshes/CellPhone/1f4e56064de606093e746e5f1700ce1a.obj",
+    "grasp_file": "CellPhone_1f4e56064de606093e746e5f1700ce1a_0.0009795699843476368.h5",
+    "scale": 0.0009795699843476368,
+    "split": "train",
+    "rank": 8
+  },
+  {
+    "category": "CellPhone",
+    "mesh_hash": "2333cb1bbf825467becc5889eb0cb75b",
+    "mesh_path": "meshes/CellPhone/2333cb1bbf825467becc5889eb0cb75b.obj",
+    "grasp_file": "CellPhone_2333cb1bbf825467becc5889eb0cb75b_0.02723999444260817.h5",
+    "scale": 0.02723999444260817,
+    "split": "train",
+    "rank": 9
+  },
+  {
+    "category": "CellPhone",
+    "mesh_hash": "24c665b954ccb8c26e4f3fb3ce0feb39",
+    "mesh_path": "meshes/CellPhone/24c665b954ccb8c26e4f3fb3ce0feb39.obj",
+    "grasp_file": "CellPhone_24c665b954ccb8c26e4f3fb3ce0feb39_0.00015674496634011673.h5",
+    "scale": 0.00015674496634011673,
+    "split": "train",
+    "rank": 10
+  },
+  {
+    "category": "CellPhone",
+    "mesh_hash": "25aced12e526ee7c156c6b2b0b4a3b8",
+    "mesh_path": "meshes/CellPhone/25aced12e526ee7c156c6b2b0b4a3b8.obj",
+    "grasp_file": "CellPhone_25aced12e526ee7c156c6b2b0b4a3b8_0.040209781905535646.h5",
+    "scale": 0.040209781905535646,
+    "split": "test",
+    "rank": 1
+  },
+  {
+    "category": "CellPhone",
+    "mesh_hash": "2682cb34e7db8735bdc7fd7cf135ade2",
+    "mesh_path": "meshes/CellPhone/2682cb34e7db8735bdc7fd7cf135ade2.obj",
+    "grasp_file": "CellPhone_2682cb34e7db8735bdc7fd7cf135ade2_0.00033920073241914015.h5",
+    "scale": 0.00033920073241914015,
+    "split": "test",
+    "rank": 2
+  },
+  {
+    "category": "Pencil",
+    "mesh_hash": "1199a072702783fca326b007412ad4b1",
+    "mesh_path": "meshes/Pencil/1199a072702783fca326b007412ad4b1.obj",
+    "grasp_file": "Pencil_1199a072702783fca326b007412ad4b1_0.021581444651684656.h5",
+    "scale": 0.021581444651684656,
+    "split": "train",
+    "rank": 1
+  },
+  {
+    "category": "Pencil",
+    "mesh_hash": "163034d9b96201beba48c111b1850fd",
+    "mesh_path": "meshes/Pencil/163034d9b96201beba48c111b1850fd.obj",
+    "grasp_file": "Pencil_163034d9b96201beba48c111b1850fd_0.05355150177825684.h5",
+    "scale": 0.05355150177825684,
+    "split": "train",
+    "rank": 2
+  },
+  {
+    "category": "Pencil",
+    "mesh_hash": "16bfbe99ccb1ed2cf54e1b6f41fdd78a",
+    "mesh_path": "meshes/Pencil/16bfbe99ccb1ed2cf54e1b6f41fdd78a.obj",
+    "grasp_file": "Pencil_16bfbe99ccb1ed2cf54e1b6f41fdd78a_0.03877221877701179.h5",
+    "scale": 0.03877221877701179,
+    "split": "train",
+    "rank": 3
+  },
+  {
+    "category": "Pencil",
+    "mesh_hash": "1bf3d5cc59b63cd6e979876000467c9c",
+    "mesh_path": "meshes/Pencil/1bf3d5cc59b63cd6e979876000467c9c.obj",
+    "grasp_file": "Pencil_1bf3d5cc59b63cd6e979876000467c9c_0.006412530250653664.h5",
+    "scale": 0.006412530250653664,
+    "split": "train",
+    "rank": 4
+  },
+  {
+    "category": "Pencil",
+    "mesh_hash": "219ce66612fd8d5499595b5eac8bb350",
+    "mesh_path": "meshes/Pencil/219ce66612fd8d5499595b5eac8bb350.obj",
+    "grasp_file": "Pencil_219ce66612fd8d5499595b5eac8bb350_0.0428625810026541.h5",
+    "scale": 0.0428625810026541,
+    "split": "train",
+    "rank": 5
+  },
+  {
+    "category": "Pencil",
+    "mesh_hash": "21b24d7acc390a3972a5c49c981e6593",
+    "mesh_path": "meshes/Pencil/21b24d7acc390a3972a5c49c981e6593.obj",
+    "grasp_file": "Pencil_21b24d7acc390a3972a5c49c981e6593_0.02360369939689528.h5",
+    "scale": 0.02360369939689528,
+    "split": "train",
+    "rank": 6
+  },
+  {
+    "category": "Pencil",
+    "mesh_hash": "227ed5be9d4981e57c2d6ee0f8315ede",
+    "mesh_path": "meshes/Pencil/227ed5be9d4981e57c2d6ee0f8315ede.obj",
+    "grasp_file": "Pencil_227ed5be9d4981e57c2d6ee0f8315ede_0.0012443965528790098.h5",
+    "scale": 0.0012443965528790098,
+    "split": "train",
+    "rank": 7
+  },
+  {
+    "category": "Pencil",
+    "mesh_hash": "23e2046a065ce27522877e5441bbb8bd",
+    "mesh_path": "meshes/Pencil/23e2046a065ce27522877e5441bbb8bd.obj",
+    "grasp_file": "Pencil_23e2046a065ce27522877e5441bbb8bd_0.036884146747986554.h5",
+    "scale": 0.036884146747986554,
+    "split": "train",
+    "rank": 8
+  },
+  {
+    "category": "Pencil",
+    "mesh_hash": "2a49f4f2ad923b77a1c637e821f12a67",
+    "mesh_path": "meshes/Pencil/2a49f4f2ad923b77a1c637e821f12a67.obj",
+    "grasp_file": "Pencil_2a49f4f2ad923b77a1c637e821f12a67_0.006127023513075759.h5",
+    "scale": 0.006127023513075759,
+    "split": "train",
+    "rank": 9
+  },
+  {
+    "category": "Pencil",
+    "mesh_hash": "2b5dd21c9645c4c45ad909ab756c9f8b",
+    "mesh_path": "meshes/Pencil/2b5dd21c9645c4c45ad909ab756c9f8b.obj",
+    "grasp_file": "Pencil_2b5dd21c9645c4c45ad909ab756c9f8b_0.00045615803396576615.h5",
+    "scale": 0.00045615803396576615,
+    "split": "train",
+    "rank": 10
+  },
+  {
+    "category": "Pencil",
+    "mesh_hash": "3537584773badbfde015d304bda1df1d",
+    "mesh_path": "meshes/Pencil/3537584773badbfde015d304bda1df1d.obj",
+    "grasp_file": "Pencil_3537584773badbfde015d304bda1df1d_0.0006127053465484708.h5",
+    "scale": 0.0006127053465484708,
+    "split": "test",
+    "rank": 1
+  },
+  {
+    "category": "Pencil",
+    "mesh_hash": "370867e6cf6f4ef8b5f19880cadbe491",
+    "mesh_path": "meshes/Pencil/370867e6cf6f4ef8b5f19880cadbe491.obj",
+    "grasp_file": "Pencil_370867e6cf6f4ef8b5f19880cadbe491_0.0053479531116545406.h5",
+    "scale": 0.0053479531116545406,
+    "split": "test",
+    "rank": 2
+  },
+  {
+    "category": "ToyFigure",
+    "mesh_hash": "12ddd9e1fa8912ae1bfccceeaa1b7669",
+    "mesh_path": "meshes/ToyFigure/12ddd9e1fa8912ae1bfccceeaa1b7669.obj",
+    "grasp_file": "ToyFigure_12ddd9e1fa8912ae1bfccceeaa1b7669_0.0010302975856607917.h5",
+    "scale": 0.0010302975856607917,
+    "split": "train",
+    "rank": 1
+  },
+  {
+    "category": "ToyFigure",
+    "mesh_hash": "14e4cb9d8fd5c29f60467dddaf5cfe3f",
+    "mesh_path": "meshes/ToyFigure/14e4cb9d8fd5c29f60467dddaf5cfe3f.obj",
+    "grasp_file": "ToyFigure_14e4cb9d8fd5c29f60467dddaf5cfe3f_0.0010536210050403542.h5",
+    "scale": 0.0010536210050403542,
+    "split": "train",
+    "rank": 2
+  },
+  {
+    "category": "ToyFigure",
+    "mesh_hash": "1a5327b328cd97d084c3569473be6c23",
+    "mesh_path": "meshes/ToyFigure/1a5327b328cd97d084c3569473be6c23.obj",
+    "grasp_file": "ToyFigure_1a5327b328cd97d084c3569473be6c23_0.0008764247229978067.h5",
+    "scale": 0.0008764247229978067,
+    "split": "train",
+    "rank": 3
+  },
+  {
+    "category": "ToyFigure",
+    "mesh_hash": "1c71617b336d49e7df8911934be85fa6",
+    "mesh_path": "meshes/ToyFigure/1c71617b336d49e7df8911934be85fa6.obj",
+    "grasp_file": "ToyFigure_1c71617b336d49e7df8911934be85fa6_0.00032213824872376584.h5",
+    "scale": 0.00032213824872376584,
+    "split": "train",
+    "rank": 4
+  },
+  {
+    "category": "ToyFigure",
+    "mesh_hash": "1e23d88e517b711567ff608a5fbe6aa8",
+    "mesh_path": "meshes/ToyFigure/1e23d88e517b711567ff608a5fbe6aa8.obj",
+    "grasp_file": "ToyFigure_1e23d88e517b711567ff608a5fbe6aa8_0.002815729451914353.h5",
+    "scale": 0.002815729451914353,
+    "split": "train",
+    "rank": 5
+  },
+  {
+    "category": "ToyFigure",
+    "mesh_hash": "21272fcb242e4e85a4312dac0c0f355c",
+    "mesh_path": "meshes/ToyFigure/21272fcb242e4e85a4312dac0c0f355c.obj",
+    "grasp_file": "ToyFigure_21272fcb242e4e85a4312dac0c0f355c_0.014739371666500902.h5",
+    "scale": 0.014739371666500902,
+    "split": "train",
+    "rank": 6
+  },
+  {
+    "category": "ToyFigure",
+    "mesh_hash": "215e4b59683247378a3e8bd3a4e48433",
+    "mesh_path": "meshes/ToyFigure/215e4b59683247378a3e8bd3a4e48433.obj",
+    "grasp_file": "ToyFigure_215e4b59683247378a3e8bd3a4e48433_1.8235900865525665e-05.h5",
+    "scale": 1.8235900865525665e-05,
+    "split": "train",
+    "rank": 7
+  },
+  {
+    "category": "ToyFigure",
+    "mesh_hash": "2180c4770b8c4fce951b9c885c695a12",
+    "mesh_path": "meshes/ToyFigure/2180c4770b8c4fce951b9c885c695a12.obj",
+    "grasp_file": "ToyFigure_2180c4770b8c4fce951b9c885c695a12_0.01040561201560998.h5",
+    "scale": 0.01040561201560998,
+    "split": "train",
+    "rank": 8
+  },
+  {
+    "category": "ToyFigure",
+    "mesh_hash": "2936cf91218a53dee04e4d5188c661b9",
+    "mesh_path": "meshes/ToyFigure/2936cf91218a53dee04e4d5188c661b9.obj",
+    "grasp_file": "ToyFigure_2936cf91218a53dee04e4d5188c661b9_0.004047202464239121.h5",
+    "scale": 0.004047202464239121,
+    "split": "train",
+    "rank": 9
+  },
+  {
+    "category": "ToyFigure",
+    "mesh_hash": "29a37eb86f4677163f6b1b708c713b4a",
+    "mesh_path": "meshes/ToyFigure/29a37eb86f4677163f6b1b708c713b4a.obj",
+    "grasp_file": "ToyFigure_29a37eb86f4677163f6b1b708c713b4a_0.00033487859521851173.h5",
+    "scale": 0.00033487859521851173,
+    "split": "train",
+    "rank": 10
+  },
+  {
+    "category": "ToyFigure",
+    "mesh_hash": "2acb67458c17af08c4b494041bc63422",
+    "mesh_path": "meshes/ToyFigure/2acb67458c17af08c4b494041bc63422.obj",
+    "grasp_file": "ToyFigure_2acb67458c17af08c4b494041bc63422_0.014031278781766127.h5",
+    "scale": 0.014031278781766127,
+    "split": "test",
+    "rank": 1
+  },
+  {
+    "category": "ToyFigure",
+    "mesh_hash": "2cd9ec4e736d25ed57ecc706f7088340",
+    "mesh_path": "meshes/ToyFigure/2cd9ec4e736d25ed57ecc706f7088340.obj",
+    "grasp_file": "ToyFigure_2cd9ec4e736d25ed57ecc706f7088340_0.004519979952691972.h5",
+    "scale": 0.004519979952691972,
+    "split": "test",
+    "rank": 2
+  },
+  {
+    "category": "Knife",
+    "mesh_hash": "14a0e49caa52c64876b7125ca47291cb",
+    "mesh_path": "meshes/Knife/14a0e49caa52c64876b7125ca47291cb.obj",
+    "grasp_file": "Knife_14a0e49caa52c64876b7125ca47291cb_0.0003647696969973712.h5",
+    "scale": 0.0003647696969973712,
+    "split": "train",
+    "rank": 1
+  },
+  {
+    "category": "Knife",
+    "mesh_hash": "208610aa6d607c90e3f7a74e12a274ef",
+    "mesh_path": "meshes/Knife/208610aa6d607c90e3f7a74e12a274ef.obj",
+    "grasp_file": "Knife_208610aa6d607c90e3f7a74e12a274ef_3.931270535541334e-05.h5",
+    "scale": 3.931270535541334e-05,
+    "split": "train",
+    "rank": 2
+  },
+  {
+    "category": "Knife",
+    "mesh_hash": "22566bf0880afefbdd980f08c090c645",
+    "mesh_path": "meshes/Knife/22566bf0880afefbdd980f08c090c645.obj",
+    "grasp_file": "Knife_22566bf0880afefbdd980f08c090c645_0.0009298803797142217.h5",
+    "scale": 0.0009298803797142217,
+    "split": "train",
+    "rank": 3
+  },
+  {
+    "category": "Knife",
+    "mesh_hash": "27727353c4beb97b51470b0aae1d360c",
+    "mesh_path": "meshes/Knife/27727353c4beb97b51470b0aae1d360c.obj",
+    "grasp_file": "Knife_27727353c4beb97b51470b0aae1d360c_0.002022413264987209.h5",
+    "scale": 0.002022413264987209,
+    "split": "train",
+    "rank": 4
+  },
+  {
+    "category": "Knife",
+    "mesh_hash": "298d152fd0adb0f33347c5de2992cc8",
+    "mesh_path": "meshes/Knife/298d152fd0adb0f33347c5de2992cc8.obj",
+    "grasp_file": "Knife_298d152fd0adb0f33347c5de2992cc8_5.523894170791315e-06.h5",
+    "scale": 5.523894170791315e-06,
+    "split": "train",
+    "rank": 5
+  },
+  {
+    "category": "Knife",
+    "mesh_hash": "2b4aa9edf0e15a6b1e00d60b0f9cc70",
+    "mesh_path": "meshes/Knife/2b4aa9edf0e15a6b1e00d60b0f9cc70.obj",
+    "grasp_file": "Knife_2b4aa9edf0e15a6b1e00d60b0f9cc70_0.0006897719910510893.h5",
+    "scale": 0.0006897719910510893,
+    "split": "train",
+    "rank": 6
+  },
+  {
+    "category": "Knife",
+    "mesh_hash": "38c843d1075bd351e652fa812161367",
+    "mesh_path": "meshes/Knife/38c843d1075bd351e652fa812161367.obj",
+    "grasp_file": "Knife_38c843d1075bd351e652fa812161367_0.016712266939760273.h5",
+    "scale": 0.016712266939760273,
+    "split": "train",
+    "rank": 7
+  },
+  {
+    "category": "Knife",
+    "mesh_hash": "399a06c05cd49d63e27e8ebff5cc9c0",
+    "mesh_path": "meshes/Knife/399a06c05cd49d63e27e8ebff5cc9c0.obj",
+    "grasp_file": "Knife_399a06c05cd49d63e27e8ebff5cc9c0_0.007427316591068728.h5",
+    "scale": 0.007427316591068728,
+    "split": "train",
+    "rank": 8
+  },
+  {
+    "category": "Knife",
+    "mesh_hash": "3b1f7f066991f2d45969e7cd6a0b6a55",
+    "mesh_path": "meshes/Knife/3b1f7f066991f2d45969e7cd6a0b6a55.obj",
+    "grasp_file": "Knife_3b1f7f066991f2d45969e7cd6a0b6a55_0.0003524989697459334.h5",
+    "scale": 0.0003524989697459334,
+    "split": "train",
+    "rank": 9
+  },
+  {
+    "category": "Knife",
+    "mesh_hash": "427139e42c842b4fe931b9a85fdc07c",
+    "mesh_path": "meshes/Knife/427139e42c842b4fe931b9a85fdc07c.obj",
+    "grasp_file": "Knife_427139e42c842b4fe931b9a85fdc07c_0.00022069410232869867.h5",
+    "scale": 0.00022069410232869867,
+    "split": "train",
+    "rank": 10
+  },
+  {
+    "category": "Knife",
+    "mesh_hash": "444e269649312fa20005c20ac894a3b",
+    "mesh_path": "meshes/Knife/444e269649312fa20005c20ac894a3b.obj",
+    "grasp_file": "Knife_444e269649312fa20005c20ac894a3b_0.00015356444290819143.h5",
+    "scale": 0.00015356444290819143,
+    "split": "test",
+    "rank": 1
+  },
+  {
+    "category": "Knife",
+    "mesh_hash": "4ad7d03773d3767c2bc52a80abcabb17",
+    "mesh_path": "meshes/Knife/4ad7d03773d3767c2bc52a80abcabb17.obj",
+    "grasp_file": "Knife_4ad7d03773d3767c2bc52a80abcabb17_0.0018054238343846504.h5",
+    "scale": 0.0018054238343846504,
+    "split": "test",
+    "rank": 2
+  },
+  {
+    "category": "FoodItem",
+    "mesh_hash": "13b48456dad49f8762edbb9e1af21a03",
+    "mesh_path": "meshes/FoodItem/13b48456dad49f8762edbb9e1af21a03.obj",
+    "grasp_file": "FoodItem_13b48456dad49f8762edbb9e1af21a03_0.0011720946882864901.h5",
+    "scale": 0.0011720946882864901,
+    "split": "train",
+    "rank": 1
+  },
+  {
+    "category": "FoodItem",
+    "mesh_hash": "16d2017606945083324387582810ec10",
+    "mesh_path": "meshes/FoodItem/16d2017606945083324387582810ec10.obj",
+    "grasp_file": "FoodItem_16d2017606945083324387582810ec10_0.00012749831604859388.h5",
+    "scale": 0.00012749831604859388,
+    "split": "train",
+    "rank": 2
+  },
+  {
+    "category": "FoodItem",
+    "mesh_hash": "186cf94ea79d2ce65d54757b2087f588",
+    "mesh_path": "meshes/FoodItem/186cf94ea79d2ce65d54757b2087f588.obj",
+    "grasp_file": "FoodItem_186cf94ea79d2ce65d54757b2087f588_0.0005818624017416168.h5",
+    "scale": 0.0005818624017416168,
+    "split": "train",
+    "rank": 3
+  },
+  {
+    "category": "FoodItem",
+    "mesh_hash": "198d36bcfacb1a7a4212ff51b27f0221",
+    "mesh_path": "meshes/FoodItem/198d36bcfacb1a7a4212ff51b27f0221.obj",
+    "grasp_file": "FoodItem_198d36bcfacb1a7a4212ff51b27f0221_0.010659036404314122.h5",
+    "scale": 0.010659036404314122,
+    "split": "train",
+    "rank": 4
+  },
+  {
+    "category": "FoodItem",
+    "mesh_hash": "1a10ecfcaac04c882d17d82c03b66",
+    "mesh_path": "meshes/FoodItem/1a10ecfcaac04c882d17d82c03b66.obj",
+    "grasp_file": "FoodItem_1a10ecfcaac04c882d17d82c03b66_0.009644771371817894.h5",
+    "scale": 0.009644771371817894,
+    "split": "train",
+    "rank": 5
+  },
+  {
+    "category": "FoodItem",
+    "mesh_hash": "1fe6ed518ca583a77215a1e3ffbff428",
+    "mesh_path": "meshes/FoodItem/1fe6ed518ca583a77215a1e3ffbff428.obj",
+    "grasp_file": "FoodItem_1fe6ed518ca583a77215a1e3ffbff428_0.009832867194604966.h5",
+    "scale": 0.009832867194604966,
+    "split": "train",
+    "rank": 6
+  },
+  {
+    "category": "FoodItem",
+    "mesh_hash": "22eeb83ef02b2d33b6ad7859401587de",
+    "mesh_path": "meshes/FoodItem/22eeb83ef02b2d33b6ad7859401587de.obj",
+    "grasp_file": "FoodItem_22eeb83ef02b2d33b6ad7859401587de_0.014510215682931121.h5",
+    "scale": 0.014510215682931121,
+    "split": "train",
+    "rank": 7
+  },
+  {
+    "category": "FoodItem",
+    "mesh_hash": "27cd39f831e73e03dd37f1676f84f13",
+    "mesh_path": "meshes/FoodItem/27cd39f831e73e03dd37f1676f84f13.obj",
+    "grasp_file": "FoodItem_27cd39f831e73e03dd37f1676f84f13_0.015576838142244661.h5",
+    "scale": 0.015576838142244661,
+    "split": "train",
+    "rank": 8
+  },
+  {
+    "category": "FoodItem",
+    "mesh_hash": "28b280b06401e17c83b787d4ec835b6b",
+    "mesh_path": "meshes/FoodItem/28b280b06401e17c83b787d4ec835b6b.obj",
+    "grasp_file": "FoodItem_28b280b06401e17c83b787d4ec835b6b_0.018772214939121026.h5",
+    "scale": 0.018772214939121026,
+    "split": "train",
+    "rank": 9
+  },
+  {
+    "category": "FoodItem",
+    "mesh_hash": "28b52131adc6b61f8a176754e2b1afb0",
+    "mesh_path": "meshes/FoodItem/28b52131adc6b61f8a176754e2b1afb0.obj",
+    "grasp_file": "FoodItem_28b52131adc6b61f8a176754e2b1afb0_0.04631482341847155.h5",
+    "scale": 0.04631482341847155,
+    "split": "train",
+    "rank": 10
+  },
+  {
+    "category": "FoodItem",
+    "mesh_hash": "2b967565ac94fe4d996e14ad8f7b2657",
+    "mesh_path": "meshes/FoodItem/2b967565ac94fe4d996e14ad8f7b2657.obj",
+    "grasp_file": "FoodItem_2b967565ac94fe4d996e14ad8f7b2657_0.014510845971286733.h5",
+    "scale": 0.014510845971286733,
+    "split": "test",
+    "rank": 1
+  },
+  {
+    "category": "FoodItem",
+    "mesh_hash": "2b9953f8a934c9af9d1eb836604648db",
+    "mesh_path": "meshes/FoodItem/2b9953f8a934c9af9d1eb836604648db.obj",
+    "grasp_file": "FoodItem_2b9953f8a934c9af9d1eb836604648db_0.011025583638528777.h5",
+    "scale": 0.011025583638528777,
+    "split": "test",
+    "rank": 2
+  },
+  {
+    "category": "Camera",
+    "mesh_hash": "1221201ed6aac041745b4b48c30a506e",
+    "mesh_path": "meshes/Camera/1221201ed6aac041745b4b48c30a506e.obj",
+    "grasp_file": "Camera_1221201ed6aac041745b4b48c30a506e_0.06289237422334275.h5",
+    "scale": 0.06289237422334275,
+    "split": "train",
+    "rank": 1
+  },
+  {
+    "category": "Camera",
+    "mesh_hash": "155ffb08fba5df33f0c6f578f0594c3",
+    "mesh_path": "meshes/Camera/155ffb08fba5df33f0c6f578f0594c3.obj",
+    "grasp_file": "Camera_155ffb08fba5df33f0c6f578f0594c3_0.0005503148206901729.h5",
+    "scale": 0.0005503148206901729,
+    "split": "train",
+    "rank": 2
+  },
+  {
+    "category": "Camera",
+    "mesh_hash": "1ab3abb5c090d9b68e940c4e64a94e1e",
+    "mesh_path": "meshes/Camera/1ab3abb5c090d9b68e940c4e64a94e1e.obj",
+    "grasp_file": "Camera_1ab3abb5c090d9b68e940c4e64a94e1e_0.0093254513746155.h5",
+    "scale": 0.0093254513746155,
+    "split": "train",
+    "rank": 3
+  },
+  {
+    "category": "Camera",
+    "mesh_hash": "1cc93f96ad5e16a85d3f270c1c35f1c7",
+    "mesh_path": "meshes/Camera/1cc93f96ad5e16a85d3f270c1c35f1c7.obj",
+    "grasp_file": "Camera_1cc93f96ad5e16a85d3f270c1c35f1c7_0.0044886857774932435.h5",
+    "scale": 0.0044886857774932435,
+    "split": "train",
+    "rank": 4
+  },
+  {
+    "category": "Camera",
+    "mesh_hash": "235a6dd25c0a6f7b66f19f26ac490096",
+    "mesh_path": "meshes/Camera/235a6dd25c0a6f7b66f19f26ac490096.obj",
+    "grasp_file": "Camera_235a6dd25c0a6f7b66f19f26ac490096_0.0502029476387363.h5",
+    "scale": 0.0502029476387363,
+    "split": "train",
+    "rank": 5
+  },
+  {
+    "category": "Camera",
+    "mesh_hash": "25c02ff35176dd9b693204b85bb5df03",
+    "mesh_path": "meshes/Camera/25c02ff35176dd9b693204b85bb5df03.obj",
+    "grasp_file": "Camera_25c02ff35176dd9b693204b85bb5df03_0.0011901623263404738.h5",
+    "scale": 0.0011901623263404738,
+    "split": "train",
+    "rank": 6
+  },
+  {
+    "category": "Camera",
+    "mesh_hash": "2693df58698a2ca29c723bc28575d785",
+    "mesh_path": "meshes/Camera/2693df58698a2ca29c723bc28575d785.obj",
+    "grasp_file": "Camera_2693df58698a2ca29c723bc28575d785_0.0039579565522273805.h5",
+    "scale": 0.0039579565522273805,
+    "split": "train",
+    "rank": 7
+  },
+  {
+    "category": "Camera",
+    "mesh_hash": "277d39e828e52f276f6efea42bf79478",
+    "mesh_path": "meshes/Camera/277d39e828e52f276f6efea42bf79478.obj",
+    "grasp_file": "Camera_277d39e828e52f276f6efea42bf79478_0.030988064725856333.h5",
+    "scale": 0.030988064725856333,
+    "split": "train",
+    "rank": 8
+  },
+  {
+    "category": "Camera",
+    "mesh_hash": "2fc6168fba3ef6953ada8db96f6d95a3",
+    "mesh_path": "meshes/Camera/2fc6168fba3ef6953ada8db96f6d95a3.obj",
+    "grasp_file": "Camera_2fc6168fba3ef6953ada8db96f6d95a3_0.0028122353080823202.h5",
+    "scale": 0.0028122353080823202,
+    "split": "train",
+    "rank": 9
+  },
+  {
+    "category": "Camera",
+    "mesh_hash": "3008d608438d62a96e70c97582b58466",
+    "mesh_path": "meshes/Camera/3008d608438d62a96e70c97582b58466.obj",
+    "grasp_file": "Camera_3008d608438d62a96e70c97582b58466_0.00022521161299334807.h5",
+    "scale": 0.00022521161299334807,
+    "split": "train",
+    "rank": 10
+  },
+  {
+    "category": "Camera",
+    "mesh_hash": "32f4aa21bdb87e5997a5d09d1e29f30b",
+    "mesh_path": "meshes/Camera/32f4aa21bdb87e5997a5d09d1e29f30b.obj",
+    "grasp_file": "Camera_32f4aa21bdb87e5997a5d09d1e29f30b_0.0035452846904191885.h5",
+    "scale": 0.0035452846904191885,
+    "split": "test",
+    "rank": 1
+  },
+  {
+    "category": "Camera",
+    "mesh_hash": "4570f175711c193cc01557b97c8aeedb",
+    "mesh_path": "meshes/Camera/4570f175711c193cc01557b97c8aeedb.obj",
+    "grasp_file": "Camera_4570f175711c193cc01557b97c8aeedb_0.013563807497287278.h5",
+    "scale": 0.013563807497287278,
+    "split": "test",
+    "rank": 2
+  },
+  {
+    "category": "SodaCan",
+    "mesh_hash": "11c785813efc4b8630eaaf40a8a562c1",
+    "mesh_path": "meshes/SodaCan/11c785813efc4b8630eaaf40a8a562c1.obj",
+    "grasp_file": "SodaCan_11c785813efc4b8630eaaf40a8a562c1_0.005657066803376543.h5",
+    "scale": 0.005657066803376543,
+    "split": "train",
+    "rank": 1
+  },
+  {
+    "category": "SodaCan",
+    "mesh_hash": "16526d147e837c386829bf9ee210f5e7",
+    "mesh_path": "meshes/SodaCan/16526d147e837c386829bf9ee210f5e7.obj",
+    "grasp_file": "SodaCan_16526d147e837c386829bf9ee210f5e7_2.2784230912183072e-05.h5",
+    "scale": 2.2784230912183072e-05,
+    "split": "train",
+    "rank": 2
+  },
+  {
+    "category": "SodaCan",
+    "mesh_hash": "1b36df7ed7ddd974c538fbfc1e40dbe0",
+    "mesh_path": "meshes/SodaCan/1b36df7ed7ddd974c538fbfc1e40dbe0.obj",
+    "grasp_file": "SodaCan_1b36df7ed7ddd974c538fbfc1e40dbe0_0.00399826389284303.h5",
+    "scale": 0.00399826389284303,
+    "split": "train",
+    "rank": 3
+  },
+  {
+    "category": "SodaCan",
+    "mesh_hash": "295be2a01cb9f29b716714dd1fd945b7",
+    "mesh_path": "meshes/SodaCan/295be2a01cb9f29b716714dd1fd945b7.obj",
+    "grasp_file": "SodaCan_295be2a01cb9f29b716714dd1fd945b7_0.0006633613704169311.h5",
+    "scale": 0.0006633613704169311,
+    "split": "train",
+    "rank": 4
+  },
+  {
+    "category": "SodaCan",
+    "mesh_hash": "2b7ff7dd97549bca153adea02d73891c",
+    "mesh_path": "meshes/SodaCan/2b7ff7dd97549bca153adea02d73891c.obj",
+    "grasp_file": "SodaCan_2b7ff7dd97549bca153adea02d73891c_0.06927025986970493.h5",
+    "scale": 0.06927025986970493,
+    "split": "train",
+    "rank": 5
+  },
+  {
+    "category": "SodaCan",
+    "mesh_hash": "2eeefdfc9b70b89eeb153e9a37e99fa5",
+    "mesh_path": "meshes/SodaCan/2eeefdfc9b70b89eeb153e9a37e99fa5.obj",
+    "grasp_file": "SodaCan_2eeefdfc9b70b89eeb153e9a37e99fa5_0.002806164488811257.h5",
+    "scale": 0.002806164488811257,
+    "split": "train",
+    "rank": 6
+  },
+  {
+    "category": "SodaCan",
+    "mesh_hash": "343287cd508a798d38df439574e01b2",
+    "mesh_path": "meshes/SodaCan/343287cd508a798d38df439574e01b2.obj",
+    "grasp_file": "SodaCan_343287cd508a798d38df439574e01b2_0.0003614207710995341.h5",
+    "scale": 0.0003614207710995341,
+    "split": "train",
+    "rank": 7
+  },
+  {
+    "category": "SodaCan",
+    "mesh_hash": "3703ada8cc31df4337b00c4c2fbe82aa",
+    "mesh_path": "meshes/SodaCan/3703ada8cc31df4337b00c4c2fbe82aa.obj",
+    "grasp_file": "SodaCan_3703ada8cc31df4337b00c4c2fbe82aa_0.023633928765675473.h5",
+    "scale": 0.023633928765675473,
+    "split": "train",
+    "rank": 8
+  },
+  {
+    "category": "SodaCan",
+    "mesh_hash": "38dd2a8d2c984e2b6c1cd53dbc9f7b8e",
+    "mesh_path": "meshes/SodaCan/38dd2a8d2c984e2b6c1cd53dbc9f7b8e.obj",
+    "grasp_file": "SodaCan_38dd2a8d2c984e2b6c1cd53dbc9f7b8e_0.04371621022027254.h5",
+    "scale": 0.04371621022027254,
+    "split": "train",
+    "rank": 9
+  },
+  {
+    "category": "SodaCan",
+    "mesh_hash": "3a7d8f866de1890bab97e834e9ba876c",
+    "mesh_path": "meshes/SodaCan/3a7d8f866de1890bab97e834e9ba876c.obj",
+    "grasp_file": "SodaCan_3a7d8f866de1890bab97e834e9ba876c_0.02468614876409797.h5",
+    "scale": 0.02468614876409797,
+    "split": "train",
+    "rank": 10
+  },
+  {
+    "category": "SodaCan",
+    "mesh_hash": "3a9041d7aa0b4b9ad9802f6365035049",
+    "mesh_path": "meshes/SodaCan/3a9041d7aa0b4b9ad9802f6365035049.obj",
+    "grasp_file": "SodaCan_3a9041d7aa0b4b9ad9802f6365035049_0.0837683350122823.h5",
+    "scale": 0.0837683350122823,
+    "split": "test",
+    "rank": 1
+  },
+  {
+    "category": "SodaCan",
+    "mesh_hash": "3c8af6b0aeaf13c2abf4b6b757f4f768",
+    "mesh_path": "meshes/SodaCan/3c8af6b0aeaf13c2abf4b6b757f4f768.obj",
+    "grasp_file": "SodaCan_3c8af6b0aeaf13c2abf4b6b757f4f768_0.054371308362211525.h5",
+    "scale": 0.054371308362211525,
+    "split": "test",
+    "rank": 2
+  },
+  {
+    "category": "WineBottle",
+    "mesh_hash": "109d55a137c042f5760315ac3bf2c13e",
+    "mesh_path": "meshes/WineBottle/109d55a137c042f5760315ac3bf2c13e.obj",
+    "grasp_file": "WineBottle_109d55a137c042f5760315ac3bf2c13e_0.0284343296284136.h5",
+    "scale": 0.0284343296284136,
+    "split": "train",
+    "rank": 1
+  },
+  {
+    "category": "WineBottle",
+    "mesh_hash": "114509277e76e413c8724d5673a063a6",
+    "mesh_path": "meshes/WineBottle/114509277e76e413c8724d5673a063a6.obj",
+    "grasp_file": "WineBottle_114509277e76e413c8724d5673a063a6_0.024962597644632923.h5",
+    "scale": 0.024962597644632923,
+    "split": "train",
+    "rank": 2
+  },
+  {
+    "category": "WineBottle",
+    "mesh_hash": "1c79735033726294724d5ee7f09ab66b",
+    "mesh_path": "meshes/WineBottle/1c79735033726294724d5ee7f09ab66b.obj",
+    "grasp_file": "WineBottle_1c79735033726294724d5ee7f09ab66b_0.00913541269759308.h5",
+    "scale": 0.00913541269759308,
+    "split": "train",
+    "rank": 3
+  },
+  {
+    "category": "WineBottle",
+    "mesh_hash": "24feb92770933b1663995fb119e59971",
+    "mesh_path": "meshes/WineBottle/24feb92770933b1663995fb119e59971.obj",
+    "grasp_file": "WineBottle_24feb92770933b1663995fb119e59971_0.013311456781162448.h5",
+    "scale": 0.013311456781162448,
+    "split": "train",
+    "rank": 4
+  },
+  {
+    "category": "WineBottle",
+    "mesh_hash": "2a9817a43c5b3983bb13793251b29587",
+    "mesh_path": "meshes/WineBottle/2a9817a43c5b3983bb13793251b29587.obj",
+    "grasp_file": "WineBottle_2a9817a43c5b3983bb13793251b29587_0.02342103080597314.h5",
+    "scale": 0.02342103080597314,
+    "split": "train",
+    "rank": 5
+  },
+  {
+    "category": "WineBottle",
+    "mesh_hash": "437678d4bc6be981c8724d5673a063a6",
+    "mesh_path": "meshes/WineBottle/437678d4bc6be981c8724d5673a063a6.obj",
+    "grasp_file": "WineBottle_437678d4bc6be981c8724d5673a063a6_0.009028183859842897.h5",
+    "scale": 0.009028183859842897,
+    "split": "train",
+    "rank": 6
+  },
+  {
+    "category": "WineBottle",
+    "mesh_hash": "546111e6869f41aca577e3e5353dd356",
+    "mesh_path": "meshes/WineBottle/546111e6869f41aca577e3e5353dd356.obj",
+    "grasp_file": "WineBottle_546111e6869f41aca577e3e5353dd356_0.01767286180474369.h5",
+    "scale": 0.01767286180474369,
+    "split": "train",
+    "rank": 7
+  },
+  {
+    "category": "WineBottle",
+    "mesh_hash": "5ad47181a9026fc728cc22dce7529b69",
+    "mesh_path": "meshes/WineBottle/5ad47181a9026fc728cc22dce7529b69.obj",
+    "grasp_file": "WineBottle_5ad47181a9026fc728cc22dce7529b69_0.011578230304192577.h5",
+    "scale": 0.011578230304192577,
+    "split": "train",
+    "rank": 8
+  },
+  {
+    "category": "WineBottle",
+    "mesh_hash": "621e786d6343d3aa2c96718b14a4add9",
+    "mesh_path": "meshes/WineBottle/621e786d6343d3aa2c96718b14a4add9.obj",
+    "grasp_file": "WineBottle_621e786d6343d3aa2c96718b14a4add9_0.018582106829968765.h5",
+    "scale": 0.018582106829968765,
+    "split": "train",
+    "rank": 9
+  },
+  {
+    "category": "WineBottle",
+    "mesh_hash": "758fb2cab125eb6b153b368d6f14e275",
+    "mesh_path": "meshes/WineBottle/758fb2cab125eb6b153b368d6f14e275.obj",
+    "grasp_file": "WineBottle_758fb2cab125eb6b153b368d6f14e275_0.007468766584401034.h5",
+    "scale": 0.007468766584401034,
+    "split": "train",
+    "rank": 10
+  },
+  {
+    "category": "WineBottle",
+    "mesh_hash": "7746997b8cfd8d11f4718731863dd64d",
+    "mesh_path": "meshes/WineBottle/7746997b8cfd8d11f4718731863dd64d.obj",
+    "grasp_file": "WineBottle_7746997b8cfd8d11f4718731863dd64d_0.0019632731498702683.h5",
+    "scale": 0.0019632731498702683,
+    "split": "test",
+    "rank": 1
+  },
+  {
+    "category": "WineBottle",
+    "mesh_hash": "7b1fc86844257f8fa54fd40ef3a8dfd0",
+    "mesh_path": "meshes/WineBottle/7b1fc86844257f8fa54fd40ef3a8dfd0.obj",
+    "grasp_file": "WineBottle_7b1fc86844257f8fa54fd40ef3a8dfd0_0.0015025820208766877.h5",
+    "scale": 0.0015025820208766877,
+    "split": "test",
+    "rank": 2
   }
 ]

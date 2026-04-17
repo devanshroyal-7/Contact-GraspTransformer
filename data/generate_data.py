@@ -16,9 +16,14 @@ Output .npz keys:
     camera_pose    (4, 4)    float64   camera pose (for reference)
 
 Usage:
-    python data/generate_data.py                        # all objects, 360 views
-    python data/generate_data.py --category Mug         # just Mug
-    python data/generate_data.py --n_views 5 --n_points 2048   # quick test
+    python data/generate_data.py                                 # all 180 objects, 360 views each
+    python data/generate_data.py --category Mug                  # just Mug (all its train+test meshes)
+    python data/generate_data.py --splits train                  # only train meshes
+    python data/generate_data.py --mesh_hash 2997f21fa426...     # one specific mesh
+    python data/generate_data.py --n_views 5 --n_points 2048     # quick smoke test
+
+Output layout (one file per view):
+    <out_root>/<split>/<category>/<mesh_hash>/NNN.npz
 """
 
 from __future__ import annotations
@@ -427,6 +432,11 @@ def main():
     parser.add_argument("--out_root", default="data/out")
     parser.add_argument("--category", default=None,
                         help="Process only this category (e.g. Mug)")
+    parser.add_argument("--mesh_hash", default=None,
+                        help="Process only this mesh hash (for debugging)")
+    parser.add_argument("--splits", nargs="+", default=["train", "test"],
+                        choices=["train", "test"],
+                        help="Which manifest splits to render")
     parser.add_argument("--n_views", type=int, default=360)
     parser.add_argument("--n_points", type=int, default=4096)
     args = parser.parse_args()
@@ -434,14 +444,31 @@ def main():
     with open(os.path.join(args.acronym_root, "manifest.json")) as f:
         manifest = json.load(f)
 
+    splits = set(args.splits)
+    selected = []
     for entry in manifest:
         if args.category and entry["category"] != args.category:
             continue
-        print(f"Generating {entry['category']} …")
+        if args.mesh_hash and entry.get("mesh_hash") != args.mesh_hash:
+            continue
+        if entry.get("split") not in splits:
+            continue
+        selected.append(entry)
+
+    print(f"Rendering {len(selected)} object(s) across splits={sorted(splits)} "
+          f"with {args.n_views} views each")
+
+    for entry in selected:
+        mesh_hash = entry.get("mesh_hash") or os.path.splitext(
+            os.path.basename(entry["mesh_path"]))[0]
+        print(f"Generating {entry['split']}/{entry['category']}/{mesh_hash} …")
         generate_object(
             acronym_root=args.acronym_root,
             entry=entry,
-            out_dir=os.path.join(args.out_root, entry["category"]),
+            out_dir=os.path.join(args.out_root,
+                                 entry["split"],
+                                 entry["category"],
+                                 mesh_hash),
             n_views=args.n_views,
             n_points=args.n_points,
         )
