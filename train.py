@@ -25,6 +25,10 @@ def build_scheduler(optimizer, cfg):
         return torch.optim.lr_scheduler.StepLR(
             optimizer, step_size=step_size, gamma=cfg.scheduler_gamma
         )
+    if cfg.scheduler == "reduce_lr_on_plateau":
+        return torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, mode="min", factor=cfg.scheduler_gamma, patience=5
+        )
     return None
 
 
@@ -62,7 +66,7 @@ def main():
     parser.add_argument("--lr", type=float, default=0.001)
     parser.add_argument("--optimizer", type=str, default="adam", choices=["adam", "adamw"])
     parser.add_argument("--weight_decay", type=float, default=0.0)
-    parser.add_argument("--scheduler", type=str, default="none", choices=["none", "cosine", "step"])
+    parser.add_argument("--scheduler", type=str, default="none", choices=["none", "cosine", "step", "reduce_lr_on_plateau"])
     parser.add_argument("--scheduler_gamma", type=float, default=0.3)
     parser.add_argument("--grad_clip_max_norm", type=float, default=0.0, help="0 disables gradient clipping")
     parser.add_argument("--loss_adds_weight", type=float, default=10.0)
@@ -82,7 +86,7 @@ def main():
                              "(overrides active_preset; e.g. 1_per_cat, 2_per_cat, 5_per_cat, 10_per_cat)")
     args = parser.parse_args()
 
-    run = wandb.init(project="cgn-sweep", config=vars(args))
+    run = wandb.init(entity="cgn-transformer", project="cgn-sweep", config=vars(args))
     cfg = wandb.config
 
     def _fmt(v):
@@ -210,9 +214,6 @@ def main():
                 )
                 break
 
-        if scheduler is not None:
-            scheduler.step()
-
         n_batches = max(len(train_loader), 1)
         metrics = {
             "train/loss": total_loss / n_batches,
@@ -226,6 +227,13 @@ def main():
         val_metrics = evaluate(model, criterion, val_loader, device)
         metrics.update(val_metrics)
         wandb.log(metrics)
+
+        if scheduler is not None:
+            # If using ReduceLROnPlateau, you MUST provide the metric
+            if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                scheduler.step(val_metrics['val/loss'])
+            else:
+                scheduler.step()
 
         if not args.overfit_one_batch:
             print(f"Epoch {epoch} | Train: {total_loss / n_batches:.4f} "
