@@ -4,3 +4,4 @@ data/out/
 data/acronym/grasps/
 data/acronym/meshes/
 wandb/
+reference.py

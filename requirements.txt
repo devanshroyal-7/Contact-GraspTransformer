@@ -7,3 +7,8 @@ scipy>=1.10
 matplotlib>=3.7
 open3d>=0.17
 wandb>=0.15
+
+# Optional: required only when PTv3Wrapper is configured with
+# cpe_mode='sparse3d' (3-D submanifold sparse conv CPE).
+# Pick the wheel matching your CUDA, e.g. `pip install spconv-cu120`.
+# spconv-cu120
