@@ -5,3 +5,5 @@ data/acronym/grasps/
 data/acronym/meshes/
 wandb/
 reference.py
+checkpoints/
+out/
