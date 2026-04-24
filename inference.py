@@ -49,22 +49,24 @@ Integration notes
 
 Usage
 -----
-    # Programmatic
+    # Programmatic (``train.py`` checkpoints: ``model_state_dict`` + ``config``)
     from inference import GraspPredictor
-    predictor = GraspPredictor("runs/best.pt", backbone="ptv3")
+    predictor = GraspPredictor("checkpoints/best.pt")
     grasps = predictor.predict(points_np, top_k=50, score_thresh=0.5)
 
-    # CLI
-    python inference.py --ckpt runs/best.pt --points scene.npy \\
-        --out grasps.npz --top-k 100 --score-thresh 0.5
+    # CLI (writes out/<run>.h5 (ACRONYM layout) + out/<run>.json with mesh info)
+    python inference.py --ckpt checkpoints/best.pt \\
+        --points data/out/train/Camera/<hash>/001.npz --top-k 100
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import os
+import re
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Tuple
 
 import numpy as np
 import torch
@@ -251,28 +253,101 @@ class GraspResult:
         }
 
 
+def _torch_load_checkpoint(path: str, map_location):
+    """Load a ``.pt`` file; allow full training dicts (PyTorch 2.6+ safe)."""
+    try:
+        return torch.load(path, map_location=map_location, weights_only=False)
+    except TypeError:
+        return torch.load(path, map_location=map_location)
+
+
+def _infer_cpe_mode_from_state_dict(state: dict) -> Optional[str]:
+    """Best-effort CPE mode detection when the checkpoint has no ``config``.
+
+    Checks one representative parameter shape:
+      * ``knn``      -> ``backbone.enc_blocks.0.0.cpe.weight`` (bare parameter)
+      * ``conv1d`` / ``sparse3d`` -> ``backbone.enc_blocks.0.0.cpe.conv.weight``
+
+    Returns ``None`` if the keys are not found (e.g. ``pn2`` backbone).
+    """
+    if not isinstance(state, dict):
+        return None
+    if "backbone.enc_blocks.0.0.cpe.weight" in state:
+        return "knn"
+    if "backbone.enc_blocks.0.0.cpe.conv.weight" in state:
+        w = state["backbone.enc_blocks.0.0.cpe.conv.weight"]
+        # sparse3d's SubMConv3d weight is 5-D (kD,kH,kW, Cin, Cout),
+        # Conv1DCPE's Conv1d weight is 3-D (Cout, Cin/groups, k).
+        if hasattr(w, "ndim"):
+            return "sparse3d" if w.ndim >= 4 else "conv1d"
+    return None
+
+
+def _state_dict_and_config_from_checkpoint(raw) -> Tuple[dict, dict]:
+    """Split ``torch.load`` output into a ``state_dict`` and optional train config.
+
+    Supports ``train.py`` checkpoints (``model_state_dict`` + ``config``),
+    ``{"model": ...}``, Lightning-style ``state_dict``, or a bare state_dict.
+    """
+    ckpt_cfg: dict = {}
+    if not isinstance(raw, dict):
+        return raw, ckpt_cfg
+
+    if "model_state_dict" in raw:
+        return raw["model_state_dict"], dict(raw.get("config") or {})
+    if "model" in raw:
+        return raw["model"], dict(raw.get("config") or {})
+    if "state_dict" in raw:
+        return raw["state_dict"], dict(raw.get("config") or {})
+
+    if any(k in raw for k in ("epoch", "optimizer_state_dict", "scheduler_state_dict")):
+        raise ValueError(
+            "Checkpoint dict is missing 'model_state_dict' / 'model' / 'state_dict'."
+        )
+    return raw, ckpt_cfg
+
+
 class GraspPredictor:
     """Thin wrapper around ContactGraspNet for real-time / ROS use.
 
     Load once, call ``.predict(points)`` per frame.
+
+    Checkpoints from ``train.py`` (``model_state_dict`` + ``config``) are
+    recognised; backbone / ``cpe_mode`` / ``num_points`` are taken from
+    ``config`` when present so the graph matches the weights.
     """
 
     def __init__(self,
                  ckpt_path: str,
                  backbone: str = "ptv3",
                  num_points: int = DEFAULT_NUM_POINTS,
-                 device: Optional[str] = None):
-        self.num_points = num_points
+                 device: Optional[str] = None,
+                 cpe_mode: Optional[str] = None):
         self.device = torch.device(
             device or ("cuda" if torch.cuda.is_available() else "cpu"))
 
-        self.model = ContactGraspNet(backbone_type=backbone).to(self.device)
+        raw = _torch_load_checkpoint(ckpt_path, map_location=self.device)
+        state, ckpt_cfg = _state_dict_and_config_from_checkpoint(raw)
 
-        state = torch.load(ckpt_path, map_location=self.device)
-        # Accept either a raw state_dict or a {"model": state_dict} checkpoint.
-        if isinstance(state, dict) and "model" in state:
-            state = state["model"]
-        self.model.load_state_dict(state)
+        eff_backbone = str(ckpt_cfg.get("backbone", backbone))
+        self.num_points = int(ckpt_cfg.get("num_points", num_points))
+
+        backbone_kwargs = None
+        if eff_backbone == "ptv3":
+            # Explicit constructor arg wins over checkpoint config; both win
+            # over the "knn" fallback. Old checkpoints with empty config let
+            # you recover by passing cpe_mode explicitly.
+            eff_cpe = cpe_mode or ckpt_cfg.get("cpe_mode")
+            if eff_cpe is None:
+                eff_cpe = _infer_cpe_mode_from_state_dict(state) or "knn"
+            backbone_kwargs = {"cpe_mode": str(eff_cpe)}
+
+        self.model = ContactGraspNet(
+            backbone_type=eff_backbone,
+            backbone_kwargs=backbone_kwargs,
+        ).to(self.device)
+
+        self.model.load_state_dict(state, strict=True)
         self.model.eval()
 
     # ------------------------------------------------------------------
@@ -386,6 +461,139 @@ def _empty_result() -> GraspResult:
     )
 
 
+# ───────────────────── ACRONYM-style output helpers ─────────────────────────
+
+_TRAINING_NPZ_RE = re.compile(
+    r"data/out/(?P<split>train|val|test)/(?P<category>[^/]+)/"
+    r"(?P<mesh_hash>[0-9a-fA-F]+)/(?P<view>\d+)\.npz$"
+)
+
+
+def _find_manifest_entry(manifest: list, category: Optional[str],
+                         mesh_hash: Optional[str]) -> Optional[dict]:
+    """Return the first manifest entry matching ``category`` and ``mesh_hash``."""
+    for entry in manifest:
+        if category is not None and entry.get("category") != category:
+            continue
+        if mesh_hash is not None and entry.get("mesh_hash") != mesh_hash:
+            continue
+        return entry
+    return None
+
+
+def _parse_training_npz_path(points_path: str) -> Optional[dict]:
+    """Pull ``category`` / ``mesh_hash`` / ``split`` from a training sample path."""
+    norm = points_path.replace("\\", "/")
+    m = _TRAINING_NPZ_RE.search(norm)
+    if not m:
+        return None
+    return {
+        "split": m.group("split"),
+        "category": m.group("category"),
+        "mesh_hash": m.group("mesh_hash"),
+        "view": m.group("view"),
+    }
+
+
+def resolve_mesh_info(points_path: str,
+                      manifest_path: Optional[str],
+                      category: Optional[str] = None,
+                      mesh_hash: Optional[str] = None) -> dict:
+    """Best-effort lookup of ``category`` / ``mesh_hash`` / ``scale`` / mesh paths.
+
+    Strategy: parse the ``.npz`` path against the training layout
+    ``data/out/<split>/<Category>/<mesh_hash>/<view>.npz`` and cross-reference
+    with ``manifest.json``. Explicit ``--category`` / ``--mesh-hash`` flags
+    always win over path-inference.
+    """
+    info: dict = {
+        "category": category,
+        "mesh_hash": mesh_hash,
+        "split": None,
+        "view": None,
+        "mesh_path": None,
+        "grasp_file": None,
+        "scale": None,
+    }
+    parsed = _parse_training_npz_path(points_path) or {}
+    info["split"] = parsed.get("split")
+    info["view"] = parsed.get("view")
+    info["category"] = info["category"] or parsed.get("category")
+    info["mesh_hash"] = info["mesh_hash"] or parsed.get("mesh_hash")
+
+    if manifest_path and os.path.exists(manifest_path):
+        with open(manifest_path) as f:
+            manifest = json.load(f)
+        entry = _find_manifest_entry(manifest, info["category"], info["mesh_hash"])
+        if entry is not None:
+            info["mesh_path"] = entry.get("mesh_path")
+            info["grasp_file"] = entry.get("grasp_file")
+            info["scale"] = entry.get("scale")
+            info["category"] = info["category"] or entry.get("category")
+            info["mesh_hash"] = info["mesh_hash"] or entry.get("mesh_hash")
+    return info
+
+
+def _default_run_stem(mesh_info: dict, points_path: str) -> str:
+    """ACRONYM-style ``<Category>_<mesh_hash>_<scale>`` when possible."""
+    cat = mesh_info.get("category")
+    h = mesh_info.get("mesh_hash")
+    scale = mesh_info.get("scale")
+    if cat and h and scale is not None:
+        return f"{cat}_{h}_{scale}"
+    base = os.path.splitext(os.path.basename(points_path))[0]
+    return f"{base or 'grasps'}_pred"
+
+
+def write_grasps_h5(path: str, grasps: "GraspResult",
+                    mesh_info: Optional[dict] = None) -> None:
+    """Write an ACRONYM-compatible ``.h5`` with predicted grasps.
+
+    Matches the datasets used elsewhere in this repo:
+      * ``grasps/transforms``               (K, 4, 4) float32
+      * ``grasps/qualities/flex/object_in_gripper`` (K,) uint8 (= score>=0.5)
+      * ``grasps/widths``                   (K,) float32
+    Additional (non-ACRONYM) datasets for convenience:
+      * ``grasps/scores`` / ``grasps/positions`` / ``grasps/quaternions``
+      * ``grasps/contacts``
+      * ``object/file`` / ``object/scale`` / ``object/category`` attrs when known
+    """
+    try:
+        import h5py
+    except ImportError as e:
+        raise RuntimeError(
+            "Writing .h5 grasp files requires h5py. `pip install h5py`."
+        ) from e
+
+    mesh_info = mesh_info or {}
+    K = int(grasps.poses.shape[0])
+
+    os.makedirs(os.path.dirname(os.path.abspath(path)) or ".", exist_ok=True)
+    with h5py.File(path, "w") as f:
+        g = f.create_group("grasps")
+        g.create_dataset("transforms", data=grasps.poses.astype(np.float32))
+        g.create_dataset("widths", data=grasps.widths.astype(np.float32))
+        g.create_dataset("scores", data=grasps.scores.astype(np.float32))
+        g.create_dataset("positions", data=grasps.positions.astype(np.float32))
+        g.create_dataset("quaternions", data=grasps.quaternions.astype(np.float32))
+        g.create_dataset("contacts", data=grasps.contacts.astype(np.float32))
+
+        qual = g.create_group("qualities").create_group("flex")
+        in_gripper = (grasps.scores >= 0.5).astype(np.uint8) if K else \
+            np.zeros((0,), dtype=np.uint8)
+        qual.create_dataset("object_in_gripper", data=in_gripper)
+
+        obj = f.create_group("object")
+        if mesh_info.get("mesh_path") is not None:
+            obj.attrs["file"] = str(mesh_info["mesh_path"])
+        if mesh_info.get("scale") is not None:
+            obj.attrs["scale"] = float(mesh_info["scale"])
+        if mesh_info.get("category") is not None:
+            obj.attrs["category"] = str(mesh_info["category"])
+        if mesh_info.get("mesh_hash") is not None:
+            obj.attrs["mesh_hash"] = str(mesh_info["mesh_hash"])
+
+
 # ─────────────────────── ROS / simulator helpers ─────────────────────────────
 
 def grasp_to_ros_pose_dict(position: np.ndarray,
@@ -425,10 +633,40 @@ def main():
     parser.add_argument("--ckpt", required=True, help="Path to trained .pt file")
     parser.add_argument("--points", required=True,
                         help="Input point cloud (.npy/.npz/.ply/.pcd/.xyz)")
-    parser.add_argument("--out", default="grasps.npz",
-                        help="Output .npz file with grasps")
-    parser.add_argument("--backbone", default="ptv3", choices=["pn2", "ptv3"])
-    parser.add_argument("--num-points", type=int, default=DEFAULT_NUM_POINTS)
+    parser.add_argument("--out-dir", default="out",
+                        help="Directory to write <run>.h5 + <run>.json into")
+    parser.add_argument("--run-name", default=None,
+                        help="Output stem; defaults to "
+                             "<Category>_<mesh_hash>_<scale> when resolvable, "
+                             "else <points-basename>_pred")
+    parser.add_argument("--manifest", default="data/acronym/manifest.json",
+                        help="ACRONYM manifest for mesh/scale lookup")
+    parser.add_argument("--acronym-root", default="data/acronym",
+                        help="Root used to resolve mesh_path / grasp_file")
+    parser.add_argument("--category", default=None,
+                        help="Override category (otherwise inferred from path)")
+    parser.add_argument("--mesh-hash", default=None,
+                        help="Override mesh hash (otherwise inferred from path)")
+    parser.add_argument("--also-npz", action="store_true",
+                        help="Additionally write a sidecar .npz of the grasps")
+    parser.add_argument(
+        "--backbone",
+        default="ptv3",
+        choices=["pn2", "ptv3"],
+        help="Fallback backbone if the checkpoint has no embedded train config",
+    )
+    parser.add_argument(
+        "--num-points",
+        type=int,
+        default=DEFAULT_NUM_POINTS,
+        help="Fallback N when the checkpoint has no embedded num_points",
+    )
+    parser.add_argument(
+        "--cpe-mode",
+        default=None,
+        choices=["knn", "conv1d", "sparse3d"],
+        help="Override PTv3 cpe_mode (auto-detected from weights when possible)",
+    )
     parser.add_argument("--score-thresh", type=float, default=0.5)
     parser.add_argument("--top-k", type=int, default=100)
     parser.add_argument("--nms-radius", type=float, default=0.02,
@@ -443,6 +681,7 @@ def main():
         backbone=args.backbone,
         num_points=args.num_points,
         device=args.device,
+        cpe_mode=args.cpe_mode,
     )
 
     points = load_point_cloud(args.points)
@@ -459,8 +698,54 @@ def main():
           f"(score>={args.score_thresh}, top_k={args.top_k}, "
           f"nms_r={args.nms_radius})")
 
-    np.savez(args.out, **grasps.as_dict())
-    print(f"Saved -> {args.out}")
+    mesh_info = resolve_mesh_info(
+        args.points,
+        manifest_path=args.manifest,
+        category=args.category,
+        mesh_hash=args.mesh_hash,
+    )
+    stem = args.run_name or _default_run_stem(mesh_info, args.points)
+    out_dir = os.path.abspath(args.out_dir)
+    os.makedirs(out_dir, exist_ok=True)
+    h5_path = os.path.join(out_dir, f"{stem}.h5")
+    json_path = os.path.join(out_dir, f"{stem}.json")
+
+    write_grasps_h5(h5_path, grasps, mesh_info=mesh_info)
+    print(f"Saved -> {h5_path}")
+
+    meta = {
+        "run_name": stem,
+        "h5": os.path.relpath(h5_path),
+        "points": os.path.abspath(args.points),
+        "ckpt": os.path.abspath(args.ckpt),
+        "frame": "input_point_cloud",
+        "num_grasps": int(grasps.scores.shape[0]),
+        "score_thresh": float(args.score_thresh),
+        "top_k": int(args.top_k) if args.top_k is not None else None,
+        "nms_radius": float(args.nms_radius),
+        "mesh": {
+            "category": mesh_info.get("category"),
+            "mesh_hash": mesh_info.get("mesh_hash"),
+            "scale": mesh_info.get("scale"),
+            "mesh_path": mesh_info.get("mesh_path"),
+            "grasp_file": mesh_info.get("grasp_file"),
+            "acronym_root": os.path.abspath(args.acronym_root)
+            if os.path.exists(args.acronym_root) else None,
+            "mesh_path_abs": (
+                os.path.abspath(os.path.join(args.acronym_root, mesh_info["mesh_path"]))
+                if mesh_info.get("mesh_path") and os.path.exists(args.acronym_root)
+                else None
+            ),
+        },
+    }
+    with open(json_path, "w") as f:
+        json.dump(meta, f, indent=2, sort_keys=True)
+    print(f"Saved -> {json_path}")
+
+    if args.also_npz:
+        npz_path = os.path.join(out_dir, f"{stem}.npz")
+        np.savez(npz_path, **grasps.as_dict())
+        print(f"Saved -> {npz_path}")
 
 
 if __name__ == "__main__":

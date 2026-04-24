@@ -62,13 +62,26 @@ def evaluate(model, criterion, val_loader, device):
     }
 
 
+def _cfg_to_dict(cfg):
+    """Serialize ``wandb.config`` / ``SimpleNamespace`` / argparse.Namespace."""
+    if hasattr(cfg, "as_dict"):
+        try:
+            return dict(cfg.as_dict())
+        except Exception:
+            pass
+    try:
+        return dict(cfg)
+    except TypeError:
+        return dict(vars(cfg))
+
+
 def save_checkpoint(path, epoch, model, optimizer, scheduler, best_val_loss, cfg):
     checkpoint = {
         "epoch": epoch,
         "model_state_dict": model.state_dict(),
         "optimizer_state_dict": optimizer.state_dict(),
         "best_val_loss": best_val_loss,
-        "config": dict(vars(cfg)),
+        "config": _cfg_to_dict(cfg),
     }
     if scheduler is not None:
         checkpoint["scheduler_state_dict"] = scheduler.state_dict()

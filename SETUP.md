@@ -43,7 +43,7 @@ python data/generate_data.py
 python data/generate_data.py --category Mug
 
 # Quick test (fewer views/points)
-python data/generate_data.py --category Mug --n_views 5 --n_points 2048
+python data/generate_data.py --category Mug --n_views 5 --n_points 4096
 
 # Example rendered Mug mesh hash
 # 2997f21fa426e18a6ab1a25d0e8f3590
