@@ -60,7 +60,14 @@ def evaluate(model, criterion, val_loader, device):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_dir", type=str, default="data/out", help="Path to datasets")
-    parser.add_argument("--backbone", type=str, default="pn2", choices=["pn2", "ptv3"], help="Backbone type")
+    parser.add_argument("--backbone", type=str, default="ptv3", choices=["pn2", "ptv3"], help="Backbone type")
+    parser.add_argument(
+        "--cpe_mode",
+        type=str,
+        default="sparse3d",
+        choices=["knn", "conv1d", "sparse3d"],
+        help="PTv3 xCPE (conditional positional encoding); ignored when backbone is pn2",
+    )
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--batch_size", type=int, default=4)
     parser.add_argument("--lr", type=float, default=0.001)
@@ -102,21 +109,36 @@ def main():
 
     gc = _cfg_get("grad_clip_max_norm", 0) or 0
     gc_tag = f"gc{_fmt(gc)}" if gc > 0 else "gcOff"
-    run_name = "_".join([
-        str(_cfg_get("backbone")),
+    backbone_s = str(_cfg_get("backbone"))
+    name_parts = [backbone_s]
+    if backbone_s == "ptv3":
+        name_parts.append(str(_cfg_get("cpe_mode", "knn")))
+    name_parts.extend([
         f"bs{_cfg_get('batch_size')}",
         f"lr{_fmt(_cfg_get('lr'))}",
         gc_tag,
     ])
+    run_name = "_".join(name_parts)
 
     run.name = run_name
-    run.tags = list(run.tags or []) + [f"backbone:{_cfg_get('backbone')}"]
+    wb_tags = [f"backbone:{backbone_s}"]
+    if backbone_s == "ptv3":
+        wb_tags.append(f"cpe_mode:{_cfg_get('cpe_mode', 'knn')}")
+    run.tags = list(run.tags or []) + wb_tags
     print(f"W&B run name: {run_name}")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using {cfg.backbone} backbone on {device}")
+    backbone_kwargs = None
+    if backbone_s == "ptv3":
+        backbone_kwargs = {"cpe_mode": str(_cfg_get("cpe_mode", "knn"))}
+        print(f"Using {cfg.backbone} backbone (cpe_mode={backbone_kwargs['cpe_mode']}) on {device}")
+    else:
+        print(f"Using {cfg.backbone} backbone on {device}")
 
-    model = ContactGraspNet(backbone_type=cfg.backbone).to(device)
+    model = ContactGraspNet(
+        backbone_type=cfg.backbone,
+        backbone_kwargs=backbone_kwargs,
+    ).to(device)
     criterion = CGNLoss(
         adds_weight=cfg.loss_adds_weight,
         width_weight=cfg.loss_width_weight,

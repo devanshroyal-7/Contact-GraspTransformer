@@ -45,15 +45,26 @@ python data/generate_data.py --category Mug
 # Quick test (fewer views/points)
 python data/generate_data.py --category Mug --n_views 5 --n_points 2048
 
-# Visualize a single view (depth + point cloud)
-python data/visualizer.py data/out/Mug/000.npz
+# Example rendered Mug mesh hash
+# 2997f21fa426e18a6ab1a25d0e8f3590
 
-# Depth-only grid of all Mug views
-python data/visualizer.py data/out/Mug/ --mode depth --grid
+# Visualize a single rendered view (depth + point cloud)
+python data/visualizer.py data/out/train/Mug/2997f21fa426e18a6ab1a25d0e8f3590/000.npz
+
+# Depth-only grid of all views for one Mug mesh
+python data/visualizer.py data/out/train/Mug/2997f21fa426e18a6ab1a25d0e8f3590/ --mode depth --grid
 
 # Point cloud coloured by grasp confidence
-python data/visualizer.py data/out/Mug/001.npz --mode grasps
+python data/visualizer.py data/out/train/Mug/2997f21fa426e18a6ab1a25d0e8f3590/001.npz --mode grasps
 
 # Train
 python train.py --data_dir data/out --backbone ptv3 --epochs 10
 ```
+
+> **Linux Wayland note:** If `open3d` / GLFW fails to create a window, run the
+> visualizer through XWayland:
+>
+> ```bash
+> env WAYLAND_DISPLAY= XDG_SESSION_TYPE=x11 GDK_BACKEND=x11 DISPLAY=:0 \
+> python data/visualizer.py data/out/train/Mug/2997f21fa426e18a6ab1a25d0e8f3590/000.npz
+> ```
