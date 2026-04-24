@@ -1,11 +1,16 @@
 import os
 import torch
 import argparse
-import wandb
+from types import SimpleNamespace
 from torch.utils.data import DataLoader
 from data.dataset import CGNDataset, resolve_train_cap
 from models.model import ContactGraspNet
 from loss import CGNLoss
+
+try:
+    import wandb
+except ImportError:
+    wandb = None
 
 
 def build_optimizer(model, cfg):
@@ -57,6 +62,34 @@ def evaluate(model, criterion, val_loader, device):
     }
 
 
+def save_checkpoint(path, epoch, model, optimizer, scheduler, best_val_loss, cfg):
+    checkpoint = {
+        "epoch": epoch,
+        "model_state_dict": model.state_dict(),
+        "optimizer_state_dict": optimizer.state_dict(),
+        "best_val_loss": best_val_loss,
+        "config": dict(vars(cfg)),
+    }
+    if scheduler is not None:
+        checkpoint["scheduler_state_dict"] = scheduler.state_dict()
+    torch.save(checkpoint, path)
+
+
+def load_checkpoint(path, model, optimizer=None, scheduler=None, device="cpu"):
+    checkpoint = torch.load(path, map_location=device, weights_only=False)
+    model.load_state_dict(checkpoint["model_state_dict"])
+
+    if optimizer is not None and "optimizer_state_dict" in checkpoint:
+        optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+
+    if scheduler is not None and "scheduler_state_dict" in checkpoint:
+        scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+
+    start_epoch = checkpoint.get("epoch", -1) + 1
+    best_val_loss = checkpoint.get("best_val_loss", float("inf"))
+    return checkpoint, start_epoch, best_val_loss
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_dir", type=str, default="data/out", help="Path to datasets")
@@ -91,10 +124,37 @@ def main():
     parser.add_argument("--budget_preset", type=str, default=None,
                         help="Named preset from training_budgets.json "
                              "(overrides active_preset; e.g. 1_per_cat, 2_per_cat, 5_per_cat, 10_per_cat)")
+    parser.add_argument("--checkpoint_dir", type=str, default="checkpoints",
+                        help="Directory where training checkpoints are saved")
+    parser.add_argument("--resume", type=str, default=None,
+                        help="Checkpoint path to resume from")
+    parser.add_argument("--save_every", type=int, default=0,
+                        help="Save an epoch checkpoint every N epochs; 0 disables per-epoch snapshots")
+    parser.add_argument("--wandb_project", type=str, default="cgn-sweep",
+                        help="Weights & Biases project name")
+    parser.add_argument("--wandb_entity", type=str, default="cgn-transformer",
+                        help="Weights & Biases entity/team name")
+    parser.add_argument("--wandb_mode", type=str, default="online",
+                        choices=["online", "offline", "disabled"],
+                        help="Weights & Biases mode")
     args = parser.parse_args()
 
-    run = wandb.init(entity="cgn-transformer", project="cgn-sweep", config=vars(args))
-    cfg = wandb.config
+    if args.wandb_mode != "disabled" and wandb is None:
+        raise ImportError(
+            "wandb is not installed. Install it or run with --wandb_mode disabled."
+        )
+
+    if wandb is not None and args.wandb_mode != "disabled":
+        run = wandb.init(
+            entity=args.wandb_entity,
+            project=args.wandb_project,
+            config=vars(args),
+            mode=args.wandb_mode,
+        )
+        cfg = wandb.config
+    else:
+        run = None
+        cfg = SimpleNamespace(**vars(args))
 
     def _fmt(v):
         if isinstance(v, float):
@@ -120,12 +180,13 @@ def main():
     ])
     run_name = "_".join(name_parts)
 
-    run.name = run_name
-    wb_tags = [f"backbone:{backbone_s}"]
-    if backbone_s == "ptv3":
-        wb_tags.append(f"cpe_mode:{_cfg_get('cpe_mode', 'knn')}")
-    run.tags = list(run.tags or []) + wb_tags
-    print(f"W&B run name: {run_name}")
+    if run is not None:
+        run.name = run_name
+        wb_tags = [f"backbone:{backbone_s}"]
+        if backbone_s == "ptv3":
+            wb_tags.append(f"cpe_mode:{_cfg_get('cpe_mode', 'knn')}")
+        run.tags = list(run.tags or []) + wb_tags
+        print(f"W&B run name: {run_name}")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     backbone_kwargs = None
@@ -145,6 +206,23 @@ def main():
     ).to(device)
     optimizer = build_optimizer(model, cfg)
     scheduler = build_scheduler(optimizer, cfg)
+    os.makedirs(cfg.checkpoint_dir, exist_ok=True)
+
+    start_epoch = 0
+    best_val_loss = float("inf")
+
+    if cfg.resume:
+        _, start_epoch, best_val_loss = load_checkpoint(
+            cfg.resume,
+            model=model,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            device=device,
+        )
+        print(
+            f"Resumed from {cfg.resume} at epoch {start_epoch} "
+            f"(best val loss: {best_val_loss:.4f})"
+        )
 
     if (os.path.exists(cfg.data_dir) and len(os.listdir(cfg.data_dir)) > 0
             and os.path.exists(cfg.manifest)):
@@ -154,8 +232,9 @@ def main():
                 override=cfg.train_objects_per_category,
                 preset=cfg.budget_preset,
             )
-            wandb.config.update({"active_train_objects_per_category": active_cap},
-                                allow_val_change=True)
+            if run is not None:
+                wandb.config.update({"active_train_objects_per_category": active_cap},
+                                    allow_val_change=True)
             print(f"Training cap: {active_cap} object(s) per category")
         except Exception as e:
             print(f"Warning: could not resolve training budget ({e})")
@@ -201,7 +280,7 @@ def main():
         val_loader = train_loader
         test_loader = None
 
-    for epoch in range(cfg.epochs):
+    for epoch in range(start_epoch, cfg.epochs):
         model.train()
         total_loss = 0
         total_conf = 0
@@ -248,7 +327,8 @@ def main():
 
         val_metrics = evaluate(model, criterion, val_loader, device)
         metrics.update(val_metrics)
-        wandb.log(metrics)
+        if run is not None:
+            wandb.log(metrics)
 
         if scheduler is not None:
             # If using ReduceLROnPlateau, you MUST provide the metric
@@ -257,6 +337,47 @@ def main():
             else:
                 scheduler.step()
 
+        is_best = val_metrics["val/loss"] < best_val_loss
+        if is_best:
+            best_val_loss = val_metrics["val/loss"]
+            best_ckpt_path = os.path.join(cfg.checkpoint_dir, "best.pt")
+            save_checkpoint(
+                best_ckpt_path,
+                epoch=epoch,
+                model=model,
+                optimizer=optimizer,
+                scheduler=scheduler,
+                best_val_loss=best_val_loss,
+                cfg=cfg,
+            )
+            print(
+                f"Saved new best checkpoint to {best_ckpt_path} "
+                f"(val loss: {best_val_loss:.4f})"
+            )
+
+        last_ckpt_path = os.path.join(cfg.checkpoint_dir, "last.pt")
+        save_checkpoint(
+            last_ckpt_path,
+            epoch=epoch,
+            model=model,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            best_val_loss=best_val_loss,
+            cfg=cfg,
+        )
+
+        if cfg.save_every > 0 and ((epoch + 1) % cfg.save_every == 0):
+            epoch_ckpt_path = os.path.join(cfg.checkpoint_dir, f"epoch_{epoch + 1:03d}.pt")
+            save_checkpoint(
+                epoch_ckpt_path,
+                epoch=epoch,
+                model=model,
+                optimizer=optimizer,
+                scheduler=scheduler,
+                best_val_loss=best_val_loss,
+                cfg=cfg,
+            )
+
         if not args.overfit_one_batch:
             print(f"Epoch {epoch} | Train: {total_loss / n_batches:.4f} "
                   f"| Val: {val_metrics['val/loss']:.4f}")
@@ -264,12 +385,14 @@ def main():
     if test_loader is not None:
         test_metrics = evaluate(model, criterion, test_loader, device)
         test_metrics = {k.replace("val/", "test/"): v for k, v in test_metrics.items()}
-        wandb.log(test_metrics)
+        if run is not None:
+            wandb.log(test_metrics)
         print("Test set (held-out meshes): "
               f"loss={test_metrics['test/loss']:.4f}")
 
     print("Training finished.")
-    run.finish()
+    if run is not None:
+        run.finish()
 
 
 if __name__ == "__main__":
