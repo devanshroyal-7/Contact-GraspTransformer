@@ -10,3 +10,4 @@ reference.py
 checkpoints/
 out/
 report.tex
+models/checkpoints/

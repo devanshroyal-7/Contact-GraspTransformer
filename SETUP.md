@@ -71,133 +71,115 @@ python train.py --data_dir data/out --backbone ptv3 --epochs 10
 
 ## Grasp Visualization + MuJoCo Execution
 
-Entrypoint:
+Use `eval.visualize_grasp` for MuJoCo lift validation. MuJoCo always simulates
+the matching object mesh; the `--source` flag only decides where the grasp comes
+from.
 
 ```bash
 python -m eval.visualize_grasp ...
 ```
 
-Pipeline:
-
-```text
-grasp source -> top-1 grasp selection -> blocking Trimesh preview -> MuJoCo -> startup wait -> approach -> exact grasp -> close -> lift
-```
-
-### Common commands
+### Recommended Workflow
 
 ```bash
-# Dataset grasp
-python -m eval.visualize_grasp --source labels --split test --top_k 1
-
-# Specific object/view
+# 1) Visual sanity check for generated dataset labels from one data/out view.
+# The .npz path identifies the object; the matching mesh is found automatically.
 python -m eval.visualize_grasp \
   --source labels \
-  --split test \
-  --category Pencil \
-  --mesh_hash 3537584773badbfde015d304bda1df1d \
-  --view_index 0
+  --view_npz data/out/test/Mug/40f9a6cc6b2c3b3a78060a3a3a55e18f/000.npz \
+  --start_delay_s 0 \
+  --top_k 1
 
-# Headless run
+# 2) Batch metric check for the same dataset labels.
 python -m eval.visualize_grasp \
   --source labels \
-  --split test \
-  --category Pencil \
-  --mesh_hash 3537584773badbfde015d304bda1df1d \
-  --no_viewer
+  --view_npz data/out/test/Mug/40f9a6cc6b2c3b3a78060a3a3a55e18f/000.npz \
+  --no_viewer \
+  --skip_preview \
+  --start_delay_s 0 \
+  --top_k 10
 
-# Repo-trained CGN checkpoint
+# 3) Evaluate a PointNet++ checkpoint on the same view.
 python -m eval.visualize_grasp \
   --source pred_cgn \
-  --split test \
-  --checkpoint <repo_trained_cgn_checkpoint.pt>
+  --checkpoint <pointnetpp_checkpoint.pt> \
+  --view_npz data/out/test/Mug/40f9a6cc6b2c3b3a78060a3a3a55e18f/000.npz \
+  --start_delay_s 0
 
-# Repo-trained PTv3 checkpoint
+# 4) Evaluate a PTv3 checkpoint on the same view.
 python -m eval.visualize_grasp \
   --source pred_ptv3 \
-  --split test \
-  --checkpoint <repo_trained_ptv3_checkpoint.pt>
+  --checkpoint <ptv3_checkpoint.pt> \
+  --view_npz data/out/test/Mug/40f9a6cc6b2c3b3a78060a3a3a55e18f/000.npz \
+  --start_delay_s 0
 ```
 
-### Flag reference
+Use `--no_viewer --skip_preview` only for headless batch runs after the visual
+path looks correct.
 
-- `--source {labels,pred_cgn,pred_ptv3,dataset_h5,model_h5}`: grasp source.
-- `--source dataset_h5`: replay ACRONYM ground-truth grasps directly from a dataset `.h5`.
-- `--source model_h5`: replay model-exported grasps from `.h5` plus export metadata `.json`.
-- `--split {train,test}`: split used when auto-selecting a generated view.
-- `--category`: optional category filter for view selection.
-- `--mesh_hash`: optional mesh filter for view selection.
-- `--view_index`: index inside the filtered view list.
-- `--view_npz`: explicit generated per-view `.npz` path.
-- `--checkpoint`: required for `pred_cgn` and `pred_ptv3`.
-- `--grasp_h5`: ACRONYM or model-exported grasp `.h5` for `dataset_h5` / `model_h5`.
-- `--grasp_json`: model-export metadata JSON for `model_h5`.
-- `--grasp_index`: starting grasp index/rank for labels and H5 modes.
-- `--top_k`: number of ranked label/H5 grasps to simulate from `--grasp_index`.
-- `--h5_hand_depth_offset_m`: calibration offset for H5 marker-derived Panda hand poses along the hand approach axis. The default is `0.03`.
-- `--only_successful_dataset_grasps` / `--no-only_successful_dataset_grasps`: filter ACRONYM H5 grasps by `object_in_gripper`.
-- `--device`: torch device for model-backed sources.
-- `--mesh_path`: optional explicit mesh path. If omitted, the ACRONYM manifest resolves it.
-- `--mesh_scale`: explicit mesh scale when using `--mesh_path`.
-- `--no_viewer`: run MuJoCo headless.
-- `--start_delay_s`: initial wait before arm approach begins (default: `5.0`).
-- `--hold_viewer`: keep the MuJoCo viewer open after execution.
-- `--show_viewer_ui`: show MuJoCo command/UI panes (default view is clean with panes hidden).
-- `--max_steps`: hard cap on simulation steps.
-- `--trimesh-preview {cgt,acronym}`: `cgt` shows the parallel wireframe, `acronym` shows NVlabs marker.
+### Source Modes
 
-### Behavior notes
+| Source | Grasp comes from | Main use |
+|---|---|---|
+| `labels` | Generated `data/out/*.npz` labels | Validate the dataset-to-MuJoCo pipeline. |
+| `pred_cgn` | PointNet++ checkpoint prediction from an `.npz` point cloud | Evaluate PointNet++ model grasps. |
+| `pred_ptv3` | PTv3 checkpoint prediction from an `.npz` point cloud | Evaluate PTv3 model grasps. |
+| `dataset_h5` | Raw ACRONYM `.h5` grasps | Low-level simulator sanity check. |
+| `model_h5` | Exported model `.h5` + `.json` predictions | Replay saved predictions without loading a checkpoint. |
 
-- Trimesh preview is blocking by default. Close the window to continue into MuJoCo.
-- Trimesh preview shows the top-1 grasp wireframe by default (`cgt` parallel-jaw frame).
-- The previewed grasp is the same grasp MuJoCo retargets to.
-- MuJoCo executes one selected grasp per trial; batch runs use the ranked candidates from the source without physics-based re-ranking.
-- `labels` mode ranks generated `data/out` candidates instead of using storage-order `argmax`; confidence is primary, then wider generated widths, then tabletop-friendly approach direction.
-- H5 and label modes can evaluate multiple grasps with `--top_k`; each trial rebuilds the scene and reports a batch success rate.
-- MuJoCo retargets directly from the grasp's contact point, approach direction, base direction, and width.
-- `dataset_h5` retargets from ACRONYM object-local marker poses; `model_h5` retargets exported marker poses in the JSON-declared `input_point_cloud` frame.
-- MuJoCo uses damped least-squares IK per phase only; no motion planner or HDF5 marker frame is used for execution.
-- MuJoCo waits 5 seconds by default before starting approach motion (`--start_delay_s` to tune).
-- MuJoCo first moves to a simple approach pose, then retargets the exact grasp pose, closes the gripper to the predicted width, and lifts.
-- MuJoCo now waits for gripper closure before lift and pauses for 1 second after close before lifting.
-- Close and lift phases use faster default timings than approach/reach, so post-retarget grasping is more responsive.
-- Success is based on physical target-object lift, not hand motion. A grasp succeeds only when the target object rises by at least 3 cm.
-- H5 replay applies a default `0.03m` hand-depth calibration so ACRONYM marker-derived poses place the Menagerie Panda fingertip pads at the expected contact depth.
-- `dataset_h5` and `model_h5` use `object/mass` from the H5 when present; otherwise the scene falls back to the configured mesh density.
-- Arm execution is physics-enabled by default: no kinematic pass-through branch is used in the normal pipeline.
-- The default scene mounts the Panda at tabletop height and places the object in a reachable tabletop zone.
-- The target object is dynamic by default; use `--static_object` only when you explicitly want a pinned debug object.
-- `pred_cgn` and `pred_ptv3` expect checkpoints trained in this repo. External checkpoints from different architectures are not compatible.
-- `model_h5` fails fast when the H5 contains zero grasps; re-export with a lower score threshold or a top-1 fallback before simulation.
+### Specific Object Selection
 
-### H5 simulation examples
+Prefer passing an explicit `--view_npz`:
 
 ```bash
-# Replay successful ACRONYM dataset grasps directly from the dataset H5
+python -m eval.visualize_grasp \
+  --source labels \
+  --view_npz data/out/<split>/<Category>/<mesh_hash>/<view>.npz \
+  --start_delay_s 0 \
+  --top_k 1
+```
+
+The path encodes the split, category, and mesh hash, so the script can resolve
+the matching `data/acronym/meshes/.../*.obj` and scale from `manifest.json`.
+
+You can also auto-select by split/category/hash:
+
+```bash
+python -m eval.visualize_grasp \
+  --source labels \
+  --split test \
+  --category Mug \
+  --mesh_hash 40f9a6cc6b2c3b3a78060a3a3a55e18f \
+  --view_index 0 \
+  --start_delay_s 0 \
+  --top_k 1
+```
+
+### Raw H5 And Exported Prediction Replay
+
+These modes are optional for normal model comparison.
+
+```bash
+# Raw ACRONYM H5 replay: simulator sanity check.
 python -m eval.visualize_grasp \
   --source dataset_h5 \
   --grasp_h5 data/acronym/grasps/Mug_2997f21fa426e18a6ab1a25d0e8f3590_0.01929277648152453.h5 \
   --grasp_index 50 \
-  --no_viewer \
-  --skip_preview \
   --top_k 1
 
-# Replay model-exported grasps from an H5/JSON pair
+# Exported model prediction replay.
 python -m eval.visualize_grasp \
   --source model_h5 \
   --grasp_h5 /path/to/model_grasps.h5 \
   --grasp_json /path/to/model_grasps.json \
-  --no_viewer \
-  --skip_preview \
-  --top_k 10
+  --top_k 1
 ```
 
-### Object selection
+### Success Metric And Notes
 
-If you run:
-
-```bash
-python -m eval.visualize_grasp --source labels --split test
-```
-
-the script scans `data/out/test/*/*/*.npz`, sorts the matches, and uses `--view_index 0` by default.
-Use `--category`, `--mesh_hash`, and `--view_index` together when you want a specific test object/view.
+- Success is physical target-object lift: `object_lift_m >= 0.03`.
+- Pose error is diagnostic only; hand motion alone is not success.
+- `labels` mode ranks generated candidates because `.npz` label confidence is usually binary.
+- `--top_k` runs multiple ranked grasps, rebuilding the scene for each trial.
+- `dataset_h5` and `model_h5` use H5 object mass when present.
+- `model_h5` requires non-empty `grasps/transforms`, `grasps/widths`, and `grasps/scores`.

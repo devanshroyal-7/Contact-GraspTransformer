@@ -110,6 +110,34 @@ The `.h5` uses the ACRONYM grasp layout, while the `.json` sidecar records the
 checkpoint, point-cloud source, frame, score settings, and mesh path/scale when
 available.
 
+### MuJoCo Grasp Validation
+
+Use MuJoCo validation to compare whether dataset labels or model-predicted
+grasps physically lift the target object. The recommended comparison path is to
+run both checkpoints on the same generated `.npz` view:
+
+```bash
+# PointNet++ baseline
+python -m eval.visualize_grasp \
+  --source pred_cgn \
+  --checkpoint <pointnetpp_checkpoint.pt> \
+  --view_npz data/out/test/Mug/40f9a6cc6b2c3b3a78060a3a3a55e18f/000.npz \
+  --start_delay_s 0
+
+# PTv3 model
+python -m eval.visualize_grasp \
+  --source pred_ptv3 \
+  --checkpoint <ptv3_checkpoint.pt> \
+  --view_npz data/out/test/Mug/40f9a6cc6b2c3b3a78060a3a3a55e18f/000.npz \
+  --start_delay_s 0
+```
+
+The `.npz` supplies the point cloud and frame information; the matching MuJoCo
+mesh is resolved from `manifest.json`. Success is based on target-object lift.
+Add `--no_viewer --skip_preview` when running headless batches.
+See [`SETUP.md`](./SETUP.md#grasp-visualization--mujoco-execution) for dataset
+label replay, raw ACRONYM H5 replay, and exported prediction replay commands.
+
 ### Visualize Data And Voxels
 
 ```bash
