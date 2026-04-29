@@ -33,6 +33,7 @@ class VoxelFrame:
     origin: np.ndarray
     xyz: Optional[np.ndarray] = None
     feature_norm: Optional[np.ndarray] = None
+    grasp_score: Optional[np.ndarray] = None
 
 
 def _resolve_device(device_name: Optional[str]) -> torch.device:
@@ -73,6 +74,22 @@ def _aggregate_grid_values(
     return unique_grid, totals / np.maximum(counts, 1.0)
 
 
+def _max_scores_for_frame(frame: VoxelFrame, points: np.ndarray, scores: np.ndarray) -> np.ndarray:
+    """Assign each displayed voxel the max grasp confidence of points inside it."""
+    point_grid = np.floor((points - frame.origin) / frame.voxel_size).astype(np.int64)
+    unique_grid, inverse = np.unique(point_grid, axis=0, return_inverse=True)
+    max_scores = np.full(len(unique_grid), -np.inf, dtype=np.float64)
+    np.maximum.at(max_scores, inverse, scores.astype(np.float64))
+    score_by_coord = {
+        tuple(coord.tolist()): float(score)
+        for coord, score in zip(unique_grid, max_scores)
+    }
+    return np.array(
+        [score_by_coord.get(tuple(coord.tolist()), 0.0) for coord in frame.grid_coord],
+        dtype=np.float64,
+    )
+
+
 def _make_point_cloud(points: np.ndarray):
     import open3d as o3d
 
@@ -87,6 +104,7 @@ def _make_voxel_wireframe(
     voxel_size: float,
     origin: np.ndarray,
     values: Optional[np.ndarray] = None,
+    normalize: bool = True,
 ):
     """Build voxel cube outlines so overlaid points stay visible."""
     import matplotlib.pyplot as plt
@@ -106,11 +124,14 @@ def _make_voxel_wireframe(
             )
         color_values = values
 
-    span = color_values.max() - color_values.min()
-    if span == 0:
-        color_values = np.zeros_like(color_values, dtype=np.float64)
+    if not normalize:
+        color_values = np.clip(color_values, 0.0, 1.0)
     else:
-        color_values = (color_values - color_values.min()) / span
+        span = color_values.max() - color_values.min()
+        if span == 0:
+            color_values = np.zeros_like(color_values, dtype=np.float64)
+        else:
+            color_values = (color_values - color_values.min()) / span
 
     points = []
     lines = []
@@ -167,6 +188,7 @@ def _maybe_subsample_frame(frame: VoxelFrame, max_voxels: int, seed: int) -> Vox
     rng = np.random.default_rng(seed)
     keep = np.sort(rng.choice(len(frame.grid_coord), max_voxels, replace=False))
     feature_norm = None if frame.feature_norm is None else frame.feature_norm[keep]
+    grasp_score = None if frame.grasp_score is None else frame.grasp_score[keep]
     if frame.xyz is None:
         xyz = None
     elif len(frame.xyz) == len(frame.grid_coord):
@@ -180,6 +202,7 @@ def _maybe_subsample_frame(frame: VoxelFrame, max_voxels: int, seed: int) -> Vox
         origin=frame.origin,
         xyz=xyz,
         feature_norm=feature_norm,
+        grasp_score=grasp_score,
     )
 
 
@@ -296,6 +319,9 @@ def capture_inference_voxels(
             hook.remove()
 
     scores = preds["confidence"][0].detach().cpu().numpy()
+    for frame in frames:
+        frame.grasp_score = _max_scores_for_frame(frame, sampled, scores)
+
     point_features = preds["features"][0].detach().cpu().numpy().T
     final_grid, final_values = _aggregate_grid_values(
         base_grid,
@@ -309,6 +335,16 @@ def capture_inference_voxels(
             origin=base_origin,
             xyz=sampled,
             feature_norm=final_values,
+            grasp_score=_max_scores_for_frame(
+                VoxelFrame(
+                    name="",
+                    grid_coord=final_grid.astype(np.int64),
+                    voxel_size=float(backbone.grid_size),
+                    origin=base_origin,
+                ),
+                sampled,
+                scores,
+            ),
         )
     )
     summary = {
@@ -329,6 +365,8 @@ def visualize_frames(frames: list[VoxelFrame], args) -> None:
         values = None
         if args.color == "feature_norm" and frame.feature_norm is not None:
             values = frame.feature_norm
+        elif args.color == "grasps" and frame.grasp_score is not None:
+            values = frame.grasp_score
         elif args.color == "height":
             values = None
         elif args.color == "stage":
@@ -338,6 +376,12 @@ def visualize_frames(frames: list[VoxelFrame], args) -> None:
             f"{frame.name}: voxel_size={frame.voxel_size:.6g} m | "
             f"occupied_voxels={len(original_frame.grid_coord)}"
         )
+        if args.color == "grasps" and values is not None:
+            print(
+                "  grasp confidence range: "
+                f"{values.min():.4f}/{values.mean():.4f}/{values.max():.4f} "
+                "(min/mean/max)"
+            )
         voxel_geometry = (
             _make_voxel_wireframe(
                 frame.grid_coord,
@@ -388,9 +432,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument(
         "--color",
-        choices=["height", "feature_norm", "stage"],
+        choices=["height", "feature_norm", "stage", "grasps"],
         default="feature_norm",
-        help="Voxel color source. Input voxels always fall back to height.",
+        help="Voxel color source. `grasps` uses max predicted grasp confidence per voxel.",
     )
     parser.add_argument(
         "--max-voxels",

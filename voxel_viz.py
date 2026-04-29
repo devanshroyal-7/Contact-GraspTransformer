@@ -87,7 +87,7 @@ def normalize_values(values):
     return (values - values.min()) / span
 
 
-def voxels_to_gradient_mesh(grid_coord, voxel_size, origin, values=None):
+def voxels_to_gradient_mesh(grid_coord, voxel_size, origin, values=None, normalize=True):
     """Build voxel cubes colored by height or by a per-voxel scalar value."""
     import open3d as o3d
     import matplotlib.pyplot as plt
@@ -106,7 +106,7 @@ def voxels_to_gradient_mesh(grid_coord, voxel_size, origin, values=None):
             raise ValueError(
                 f"Expected {len(grid_coord)} color values, got {len(values)}"
             )
-        color_values = normalize_values(values)
+        color_values = normalize_values(values) if normalize else np.clip(values, 0.0, 1.0)
 
     for center, color_value in zip(centers, color_values):
         box = o3d.geometry.TriangleMesh.create_box(voxel_size, voxel_size, voxel_size)

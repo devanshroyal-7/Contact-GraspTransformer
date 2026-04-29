@@ -1,169 +1,195 @@
-# Contact-GraspNet (Transformer) — Inference
+# Contact-GraspNet With Point Transformer V3
 
-See [`SETUP.md`](./SETUP.md) for environment setup, data generation, training,
-and visualization. This file documents **running inference** with a trained
-checkpoint and generating the ACRONYM-style `.h5` + metadata `.json` that a
-physics simulator can consume.
+This project trains and evaluates a point-cloud grasp detection model for
+6-DoF robotic manipulation. It adapts the Contact-GraspNet prediction heads to
+two interchangeable backbones:
 
-## TL;DR
+- **PointNet++ (`pn2`)** as a compact baseline for dense point-cloud features.
+- **Point Transformer V3 (`ptv3`)** with voxel pooling, space-filling-curve
+  serialization, windowed attention, and configurable conditional positional
+  encoding.
+
+The end-to-end pipeline covers ACRONYM subset preparation, synthetic depth and
+point-cloud rendering, per-point grasp label generation, training, inference,
+and interactive visualization of both grasp labels and PTv3 voxel behavior.
+
+## Project Highlights
+
+- Generates Contact-GraspNet-style training samples from an ACRONYM object
+  subset across 15 everyday object categories.
+- Trains shared CGN heads for grasp confidence, approach/base directions, and
+  gripper width.
+- Supports both PointNet++ and PTv3 backbones from the same `ContactGraspNet`
+  wrapper.
+- Exports inference results as ACRONYM-layout `.h5` files plus JSON sidecars
+  that downstream simulators can use to recover mesh metadata.
+- Includes Open3D visualization tools for rendered samples, grasp labels,
+  synthetic PTv3 voxel stages, and real checkpoint voxel pooling.
+
+## Quick Start
+
+Follow the full environment instructions in [`SETUP.md`](./SETUP.md).
+
+```bash
+conda create -n idlsproj python=3.9 -y
+conda activate idlsproj
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+pip install -r requirements.txt
+```
+
+On a CPU-only machine, install the CPU PyTorch wheel instead of the CUDA wheel.
+On a headless server, set `PYOPENGL_PLATFORM=egl` before running rendering
+scripts. See [`SETUP.md`](./SETUP.md) for verification commands and Linux
+Wayland display notes.
+
+## Common Workflows
+
+### Generate Training Data
+
+The data pipeline renders ACRONYM meshes from multiple camera views, back-projects
+depth to point clouds, and assigns per-point grasp labels.
+
+```bash
+# Full dataset generation
+python data/generate_data.py
+
+# Generate one category for faster iteration
+python data/generate_data.py --category Mug
+
+# Quick debug render
+python data/generate_data.py --category Mug --n_views 5 --n_points 4096
+```
+
+Detailed data documentation lives in [`data.md`](./data.md), including the
+ACRONYM subset layout, `manifest.json` schema, output `.npz` keys, coordinate
+frames, and training budget presets.
+
+### Train a Model
+
+```bash
+# Default PTv3 training
+python train.py --data_dir data/out --backbone ptv3 --epochs 10
+
+# PointNet++ baseline
+python train.py --data_dir data/out --backbone pn2 --epochs 10
+
+# Use a named object-budget preset
+python train.py --budget_preset 2_per_cat
+```
+
+Training saves `best.pt` and `last.pt` checkpoints under `checkpoints/` by
+default. Hyper-parameter sweeps are configured in
+[`sweep_config.yaml`](./sweep_config.yaml), and architecture details are
+documented in [`model.md`](./model.md).
+
+### Run Inference
 
 ```bash
 python inference.py \
   --ckpt checkpoints/best.pt \
   --points data/out/train/Camera/<mesh_hash>/001.npz \
-  --top-k 100 --score-thresh 0.5
+  --top-k 100 \
+  --score-thresh 0.5
 ```
 
-Produces:
+Inference reads one point cloud (`.npz`, `.npy`, `.ply`, `.pcd`, `.xyz`, or
+`.txt`) and returns ranked Panda-hand grasp poses in the same frame as that
+cloud. Generated-sample paths can automatically provide category and mesh
+metadata through `data/acronym/manifest.json`.
 
-```
-out/<Category>_<mesh_hash>_<scale>.h5     # ACRONYM-layout grasps
-out/<Category>_<mesh_hash>_<scale>.json   # mesh + run metadata
-```
+Typical outputs:
 
-## How the object is chosen
-
-Inference reads **one point cloud** (`--points`). That cloud *is* the object —
-the model has no category/hash input. Whatever you pass in is what the network
-labels per-point.
-
-`--category`, `--mesh-hash`, `--manifest`, and `--acronym-root` only affect the
-**metadata** written into `out/<stem>.json` (and the filename stem). They let a
-downstream sim locate the matching mesh for visualization. If the input path
-follows `data/out/<split>/<Category>/<mesh_hash>/<view>.npz`, those values are
-inferred from the path and cross-referenced with `manifest.json` automatically.
-
-## CLI reference
-
-| Flag | Default | Purpose |
-|---|---|---|
-| `--ckpt` | required | Checkpoint from `train.py` (`.pt`). |
-| `--points` | required | `.npy`/`.npz`/`.ply`/`.pcd`/`.xyz`. `.npz` reads a `points` key if present. |
-| `--out-dir` | `out` | Directory that will hold `<stem>.h5` + `<stem>.json`. Created if missing. |
-| `--run-name` | auto | Override the output stem. Default is `<Category>_<mesh_hash>_<scale>` when resolvable, else `<points-basename>_pred`. |
-| `--manifest` | `data/acronym/manifest.json` | ACRONYM manifest for `scale` / `mesh_path` / `grasp_file` lookup. |
-| `--acronym-root` | `data/acronym` | Root used to make the mesh path absolute in the JSON. |
-| `--category` / `--mesh-hash` | `None` | Force identity instead of inferring from the path. Metadata only. |
-| `--also-npz` | off | Additionally write `<stem>.npz` with all grasp arrays. |
-| `--backbone` | `ptv3` | Fallback only if the checkpoint has no embedded `config`. |
-| `--num-points` | `4096` | Fallback N if `config` is missing. |
-| `--cpe-mode` | auto | PTv3 CPE mode override; normally auto-detected from the weights. |
-| `--score-thresh` | `0.5` | Drop grasps with confidence below this. |
-| `--top-k` | `100` | Keep only the top-K by score. |
-| `--nms-radius` | `0.02` | Greedy NMS on grasp position (metres). `0` disables. |
-| `--device` | auto | `cuda` / `cpu`. Defaults to CUDA if available. |
-| `--seed` | `0` | Reproducible point sampling. |
-
-## Output files
-
-### `out/<stem>.h5` (ACRONYM layout)
-
-The same groups used by `data/generate_data.py`, `data/visualizer.py`, and
-`data/viz_test.py`:
-
-- `grasps/transforms` — `(K, 4, 4)` float32 SE(3), **panda_hand** convention,
-  in the **input point cloud's frame** (see "Frames" below).
-- `grasps/qualities/flex/object_in_gripper` — `(K,)` uint8, set from
-  `scores >= 0.5`.
-- `grasps/widths` — `(K,)` float32 target gripper opening (metres).
-- Additional (non-ACRONYM) datasets for convenience:
-  `grasps/scores`, `grasps/positions`, `grasps/quaternions` (xyzw),
-  `grasps/contacts`.
-- `object` group attrs when resolvable: `file`, `scale`, `category`,
-  `mesh_hash`.
-
-### `out/<stem>.json` (sidecar)
-
-```jsonc
-{
-  "run_name": "Camera_155ffb08..._0.0007...",
-  "h5": "out/Camera_155ffb08..._0.0007....h5",
-  "points": "/abs/path/.../001.npz",
-  "ckpt": "/abs/path/checkpoints/best.pt",
-  "frame": "input_point_cloud",
-  "num_grasps": 100,
-  "score_thresh": 0.5,
-  "top_k": 100,
-  "nms_radius": 0.02,
-  "mesh": {
-    "category": "Camera",
-    "mesh_hash": "155ffb08...",
-    "scale": 0.0007...,
-    "mesh_path": "meshes/Camera/155ffb08....obj",
-    "grasp_file": "Camera_155ffb08..._0.0007....h5",
-    "acronym_root": "/abs/path/data/acronym",
-    "mesh_path_abs": "/abs/path/data/acronym/meshes/Camera/155ffb08....obj"
-  }
-}
+```text
+out/<Category>_<mesh_hash>_<scale>.h5
+out/<Category>_<mesh_hash>_<scale>.json
 ```
 
-This is what a sim should read to locate both the grasps (`h5`) and the mesh
-(`mesh.mesh_path_abs` at `mesh.scale`).
+The `.h5` uses the ACRONYM grasp layout, while the `.json` sidecar records the
+checkpoint, point-cloud source, frame, score settings, and mesh path/scale when
+available.
 
-## Frames (important for sim)
-
-- Output `grasps/transforms` are in the **same frame as the input cloud**.
-- If `--points` is a training sample rendered by `data/generate_data.py`, that
-  frame is the **camera frame** used for that view (the `.npz` also stores
-  `camera_pose` if you need to transform back to world).
-- If `--points` is an arbitrary depth reading, the frame is whatever that
-  reading is already in.
-
-To overlay on the mesh in a simulator you must place the mesh in the same
-frame as the cloud. For training samples, the generation pipeline centres the
-mesh at `mesh_mean` and scales by `manifest.scale` before placing it at
-`obj_pose` (world). The saved `.json` gives you the information to reconstruct
-that placement.
-
-## Examples
-
-### 1. Training sample (auto-infers mesh identity)
+### Visualize Data And Voxels
 
 ```bash
-python inference.py \
+# Rendered depth / point cloud / grasp labels
+python data/visualizer.py data/out/train/Mug/<mesh_hash>/000.npz
+python data/visualizer.py data/out/train/Mug/<mesh_hash>/001.npz --mode grasps
+
+# Synthetic PTv3 voxel and serialization views
+python voxel_viz.py data/out/train/Mug/<mesh_hash>/000.npz --mode all
+
+# Real voxel pooling from a trained PTv3 checkpoint
+python inference_voxel_viz.py \
   --ckpt checkpoints/best.pt \
-  --points data/out/train/Camera/155ffb08fba5df33f0c6f578f0594c3/001.npz \
-  --top-k 200 --score-thresh 0.3 --nms-radius 0.02
+  --points data/out/train/Mug/<mesh_hash>/000.npz
 ```
 
-Outputs:
+See the visualization section in [`data.md`](./data.md#voxel-visualization-tools)
+for modes, options, and display troubleshooting.
 
+## Repository Guide
+
+| Path | Purpose |
+|---|---|
+| [`SETUP.md`](./SETUP.md) | Environment setup, installation, verification, and quick commands. |
+| [`data.md`](./data.md) | ACRONYM subset, data generation, output schemas, visualization, and training-data selection. |
+| [`model.md`](./model.md) | PointNet++, PTv3, CGN heads, and training hyper-parameter documentation. |
+| [`train.py`](./train.py) | Main training entry point with checkpointing and W&B logging. |
+| [`inference.py`](./inference.py) | Point-cloud-to-grasp inference CLI and programmatic predictor. |
+| [`data/generate_data.py`](./data/generate_data.py) | Synthetic render and label generation pipeline. |
+| [`data/dataset.py`](./data/dataset.py) | Dataset loader and train/val/test object-budget filtering. |
+| [`data/visualizer.py`](./data/visualizer.py) | Open3D visualization for generated `.npz` samples. |
+| [`voxel_viz.py`](./voxel_viz.py) | Explanatory PTv3 voxelization, pooling, CPE, and serialization views. |
+| [`inference_voxel_viz.py`](./inference_voxel_viz.py) | Checkpoint-backed PTv3 voxel-pooling visualization. |
+| [`models/`](./models) | ContactGraspNet wrapper, backbones, and prediction heads. |
+| [`loss.py`](./loss.py) | CGN training losses for confidence, pose directions, and width. |
+| [`requirements.txt`](./requirements.txt) | Python dependencies. |
+
+## Data Layout
+
+The expected local ACRONYM subset is:
+
+```text
+data/acronym/
+├── manifest.json
+├── training_budgets.json
+├── meshes/<Category>/*.obj
+└── grasps/*.h5
 ```
-out/Camera_155ffb08fba5df33f0c6f578f0594c3_0.0007923...h5
-out/Camera_155ffb08fba5df33f0c6f578f0594c3_0.0007923...json
+
+Generated samples are written under `data/out/`:
+
+```text
+data/out/
+├── train/<Category>/<mesh_hash>/<view>.npz
+└── test/<Category>/<mesh_hash>/<view>.npz
 ```
 
-### 2. Arbitrary `.npy` cloud (no mesh metadata)
+Each `.npz` contains the rendered depth image, regularized point cloud,
+per-point grasp labels, widths, and camera pose. The active training budget is
+controlled by `data/acronym/training_budgets.json` or by `train.py` CLI flags.
 
-```bash
-python inference.py \
-  --ckpt checkpoints/best.pt \
-  --points scans/scene.npy \
-  --run-name scene_run1
-```
+## Inference Output And Frames
 
-Outputs `out/scene_run1.h5` + `out/scene_run1.json` with an empty `mesh`
-section — the grasps themselves are still correct, there's just nothing to
-overlay them on.
+All inference grasp transforms are emitted in the **same coordinate frame as the
+input point cloud**. For generated training samples, that is the saved camera
+frame for the view. For arbitrary sensor scans, it is whatever frame the scan
+already uses.
 
-### 3. Force a specific mesh identity (e.g. custom cloud of a known object)
+The exported `.h5` contains:
 
-```bash
-python inference.py \
-  --ckpt checkpoints/best.pt \
-  --points scans/mug_scan.ply \
-  --category Mug --mesh-hash 2997f21fa426e18a6ab1a25d0e8f3590 \
-  --manifest data/acronym/manifest.json
-```
+- `grasps/transforms`: `(K, 4, 4)` SE(3) transforms in Panda-hand convention.
+- `grasps/qualities/flex/object_in_gripper`: binary success labels from scores.
+- `grasps/widths`: target gripper widths in metres.
+- Convenience arrays such as `scores`, `positions`, `quaternions`, and
+  `contacts`.
 
-The sidecar will then point to that mesh at its manifest `scale`.
+Use the JSON sidecar to locate the matching mesh and scale in a simulator when
+the input came from the generated ACRONYM-style dataset.
 
-## Prerequisites
+## References
 
-- A trained checkpoint at `checkpoints/best.pt` (or wherever you point
-  `--ckpt`). `train.py` saves `best.pt` + `last.pt` into `checkpoints/`.
-- `h5py` installed (already in `requirements.txt`).
-- For `.ply` / `.pcd` inputs, `open3d` (optional, installed by `requirements.txt`).
-- For training-sample inputs, the ACRONYM subset at `data/acronym/` with
-  `manifest.json` is needed only to populate the `.json` sidecar; inference
-  itself does not need it.
+- [`CGN.pdf`](./CGN.pdf): Contact-GraspNet reference paper/material.
+- [`ptv3.pdf`](./ptv3.pdf): Point Transformer V3 reference paper/material.
+- [`model.md`](./model.md): Local architecture notes and code references.
+- [`data.md`](./data.md): Local data-generation and visualization notes.
