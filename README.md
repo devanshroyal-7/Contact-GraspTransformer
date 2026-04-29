@@ -1,5 +1,7 @@
 # Contact-GraspNet With Point Transformer V3
 
+Refer to [SETUP.md](SETUP.md) for environment setup.
+
 This project trains and evaluates a point-cloud grasp detection model for
 6-DoF robotic manipulation. It adapts the Contact-GraspNet prediction heads to
 two interchangeable backbones:

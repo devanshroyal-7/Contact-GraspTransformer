@@ -1,5 +1,7 @@
 .cursor/
 __pycache__/
+.DS_Store
+cache/
 data/out/
 data/acronym/grasps/
 data/acronym/meshes/
@@ -7,3 +9,4 @@ wandb/
 reference.py
 checkpoints/
 out/
+report.tex

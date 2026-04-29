@@ -2,6 +2,7 @@ numpy>=1.24,<2.0
 torch>=2.0
 h5py>=3.7
 trimesh>=3.20
+pyglet>=1.5.27,<2
 pyrender>=0.1.45
 scipy>=1.10
 matplotlib>=3.7
@@ -12,3 +13,7 @@ wandb>=0.15
 # cpe_mode='sparse3d' (3-D submanifold sparse conv CPE).
 # Pick the wheel matching your CUDA, e.g. `pip install spconv-cu120`.
 # spconv-cu120
+mujoco>=3.3
+mink>=0.0.5
+obj2mjcf>=0.1
+robot_descriptions>=1.0
