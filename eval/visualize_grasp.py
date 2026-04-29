@@ -30,33 +30,18 @@ from eval.ik_retarget import (
     contact_to_hand_pose,
     marker_to_hand_pose,
 )
-from eval.legacy.utils import make_grasp_pose
 from eval.scene_builder import build_scene
-from eval.trimesh_preview import show_grasp_preview
-from eval.utils import cam_centred_to_world, grasp_world_to_mujoco
+from eval.trimesh_preview import (
+    show_grasp_comparison_preview,
+    show_grasp_preview,
+    show_grasp_set_preview,
+)
+from eval.utils import cam_centred_to_world, grasp_world_to_mujoco, make_grasp_pose
 from eval.visualize_types import GraspSpec, validate_pose_se3
 from models.model import ContactGraspNet
 
 
 CONTACT_FRAME_SOURCES = {"labels", "pred_cgn", "pred_ptv3"}
-H5_FRAME_SOURCES = {"dataset_h5", "model_h5"}
-
-
-def _best_index(
-    confidence: np.ndarray,
-    *,
-    min_confidence: float | None = None,
-) -> int:
-    if len(confidence) == 0:
-        raise ValueError("No grasp candidates available")
-    conf = np.asarray(confidence, dtype=np.float64)
-    if not np.all(np.isfinite(conf)):
-        raise ValueError("Confidence array contains non-finite values")
-    if min_confidence is not None and float(np.max(conf)) < float(min_confidence):
-        raise ValueError(
-            f"No grasp candidate meets confidence >= {float(min_confidence):.3f}"
-        )
-    return int(np.argmax(conf))
 
 
 def _extract_state_dict(ckpt: Any) -> dict[str, Any]:
@@ -77,94 +62,165 @@ def _extract_state_dict(ckpt: Any) -> dict[str, Any]:
     return state
 
 
-def _load_model_for_backbone(backbone: str, checkpoint: str, device: str) -> ContactGraspNet:
+def _checkpoint_config_value(ckpt: Any, name: str, default: Any = None) -> Any:
+    if not isinstance(ckpt, dict):
+        return default
+    cfg = ckpt.get("config")
+    if cfg is None:
+        return default
+    if isinstance(cfg, dict):
+        return cfg.get(name, default)
+    return getattr(cfg, name, default)
+
+
+def _load_model_for_backbone(
+    backbone: str,
+    checkpoint: str,
+    device: str,
+    *,
+    ptv3_cpe_mode: str = "auto",
+) -> ContactGraspNet:
     import torch
 
     dev = torch.device(device)
-    model = ContactGraspNet(backbone_type=backbone).to(dev)
     ckpt = torch.load(checkpoint, map_location=dev, weights_only=False)
+    ckpt_backbone = _checkpoint_config_value(ckpt, "backbone")
+    if ckpt_backbone is not None and str(ckpt_backbone) != str(backbone):
+        raise ValueError(
+            f"Checkpoint was trained with backbone={ckpt_backbone!r}, "
+            f"but --source requested backbone={backbone!r}."
+        )
+
+    backbone_kwargs: dict[str, Any] | None = None
+    if backbone == "ptv3":
+        cpe_mode = (
+            str(_checkpoint_config_value(ckpt, "cpe_mode", "knn"))
+            if ptv3_cpe_mode == "auto"
+            else str(ptv3_cpe_mode)
+        )
+        backbone_kwargs = {"cpe_mode": cpe_mode}
+    else:
+        cpe_mode = None
+
+    try:
+        model = ContactGraspNet(backbone_type=backbone, backbone_kwargs=backbone_kwargs).to(dev)
+    except ImportError as exc:
+        if backbone == "ptv3" and cpe_mode == "sparse3d":
+            raise ValueError(
+                "This PTv3 checkpoint was trained with cpe_mode='sparse3d', "
+                "which requires spconv at evaluation time. Install a compatible "
+                "spconv package in this environment, or evaluate a PTv3 checkpoint "
+                "trained with --cpe_mode knn/conv1d."
+            ) from exc
+        raise
+
     state = _extract_state_dict(ckpt)
     try:
         model.load_state_dict(state, strict=True)
     except RuntimeError as exc:
+        detail = str(exc).splitlines()[0]
         raise ValueError(
             "Checkpoint is incompatible with this repo architecture/backbone. "
-            f"Requested backbone={backbone!r}. Use a checkpoint trained in this repo."
+            f"Requested backbone={backbone!r}"
+            + (f", cpe_mode={cpe_mode!r}" if cpe_mode is not None else "")
+            + f". Detail: {detail}"
         ) from exc
     model.eval()
     return model
 
 
-def _load_pred_grasp(
-    npz_data: dict[str, np.ndarray],
+def _load_pred_candidates(
+    args,
+    obj_xy: tuple[float, float],
     *,
     backbone: str,
-    checkpoint: str,
-    device: str,
     source_name: str,
-) -> GraspSpec:
+    grasp_index: int | None = None,
+    top_k: int | None = None,
+) -> list[dict[str, Any]]:
+    """Build ranked MuJoCo replay candidates from a checkpoint prediction."""
+    _require(args.view_npz is not None, "--view_npz is required")
+    _require(args.checkpoint is not None, f"--checkpoint is required for {source_name}")
+    npz_data = _load_npz_dict(args.view_npz)
+
     import torch
 
-    model = _load_model_for_backbone(backbone, checkpoint, device)
+    model = _load_model_for_backbone(
+        backbone,
+        args.checkpoint,
+        args.device,
+        ptv3_cpe_mode=args.ptv3_cpe_mode,
+    )
     points = np.asarray(npz_data["points"], dtype=np.float32)
     if points.ndim != 2 or points.shape[1] != 3:
         raise ValueError(f"Expected points shape (N,3), got {points.shape}")
 
     with torch.no_grad():
-        preds = model(torch.from_numpy(points).float().unsqueeze(0).to(device))
+        preds = model(torch.from_numpy(points).float().unsqueeze(0).to(args.device))
 
-    conf = preds["confidence"].squeeze(0).detach().cpu().numpy()
+    conf = preds["confidence"].squeeze(0).detach().cpu().numpy().reshape(-1)
     app = preds["approach_dirs"].squeeze(0).detach().cpu().numpy()
     base = preds["base_dirs"].squeeze(0).detach().cpu().numpy()
-    widths = preds["widths"].squeeze(0).detach().cpu().numpy()
+    widths = preds["widths"].squeeze(0).detach().cpu().numpy().reshape(-1)
+    camera_pose = np.asarray(npz_data.get("camera_pose", np.eye(4)), dtype=np.float64)
 
-    idx = _best_index(conf)
-    T = make_grasp_pose(
-        points[idx], app[idx], base[idx], width=None
+    if not (len(points) == len(conf) == len(app) == len(base) == len(widths)):
+        raise ValueError("model prediction arrays must have matching first dimension")
+    valid = (
+        np.isfinite(conf)
+        & np.isfinite(widths)
+        & (widths > 0.0)
+        & np.all(np.isfinite(app), axis=1)
+        & np.all(np.isfinite(base), axis=1)
     )
-    T = validate_pose_se3(T, "contact_pose")
-    return GraspSpec(
-        contact_pose_SE3=T,
-        width_m=float(widths[idx]),
-        source_meta={
-            "source": source_name,
-            "confidence": float(conf[idx]),
-            "point_index": int(idx),
-        },
+    indices = np.flatnonzero(valid)
+    if len(indices) == 0:
+        raise ValueError(f"{source_name} produced no finite grasp candidates")
+
+    ordered = indices[np.argsort(-conf[indices])]
+    selected = _slice_order(
+        ordered,
+        grasp_index=args.grasp_index if grasp_index is None else grasp_index,
+        top_k=args.top_k if top_k is None else top_k,
     )
+    rank_by_index = {int(idx): int(rank) for rank, idx in enumerate(ordered)}
 
-
-def _load_label_grasp(
-    npz_data: dict[str, np.ndarray],
-) -> GraspSpec:
-    points = np.asarray(npz_data["points"], dtype=np.float64)
-    conf = np.asarray(npz_data["confidence"], dtype=np.float64)
-    app = np.asarray(npz_data["approach_dirs"], dtype=np.float64)
-    base = np.asarray(npz_data["base_dirs"], dtype=np.float64)
-    widths = np.asarray(npz_data["widths"], dtype=np.float64)
-
-    if len(points) == 0:
-        raise ValueError("No points found in view npz")
-
-    idx = _best_index(conf, min_confidence=0.5)
-    T = make_grasp_pose(
-        points[idx], app[idx], base[idx], width=None
-    )
-    T = validate_pose_se3(T, "contact_pose")
-    return GraspSpec(
-        contact_pose_SE3=T,
-        width_m=float(widths[idx]),
-        source_meta={
-            "source": "labels",
-            "confidence": float(conf[idx]),
-            "point_index": int(idx),
-        },
-    )
+    out: list[dict[str, Any]] = []
+    for trial_rank, idx in enumerate(selected):
+        point_idx = int(idx)
+        T_local = make_grasp_pose(points[point_idx], app[point_idx], base[point_idx], width=None)
+        T_local = validate_pose_se3(T_local, "pred_contact_pose")
+        T_world = cam_centred_to_world(T_local, camera_pose, np.zeros(3, dtype=np.float64))
+        T_mujoco = grasp_world_to_mujoco(
+            T_world, obj_z_offset=0.0, obj_xy_offset=obj_xy
+        )
+        out.append(
+            {
+                "kind": "contact_world",
+                "contact_pose_world": validate_pose_se3(T_mujoco, "pred_contact_pose_world"),
+                "width_m": float(widths[point_idx]),
+                "meta": {
+                    "source": source_name,
+                    "confidence": float(conf[point_idx]),
+                    "score": float(conf[point_idx]),
+                    "point_index": point_idx,
+                    "grasp_idx": point_idx,
+                    "rank": int(rank_by_index[point_idx]),
+                    "trial_rank": int(trial_rank),
+                    "checkpoint": os.path.abspath(args.checkpoint),
+                    "view_npz": os.path.abspath(args.view_npz),
+                },
+            }
+        )
+    return out
 
 
 def _load_label_candidates(
     args,
     obj_xy: tuple[float, float],
+    *,
+    grasp_index: int | None = None,
+    top_k: int | None = None,
 ) -> list[dict[str, Any]]:
     """Build replay candidates from generated data/out labels.
 
@@ -213,7 +269,11 @@ def _load_label_candidates(
         )
     )
     ordered = indices[local_order]
-    selected = _slice_order(ordered, grasp_index=args.grasp_index, top_k=args.top_k)
+    selected = _slice_order(
+        ordered,
+        grasp_index=args.grasp_index if grasp_index is None else grasp_index,
+        top_k=args.top_k if top_k is None else top_k,
+    )
 
     out: list[dict[str, Any]] = []
     app_z_by_index = {int(idx): float(world_app_z[j]) for j, idx in enumerate(indices)}
@@ -632,50 +692,6 @@ def _validate_model_h5_nonempty(args, json_meta: dict[str, Any]) -> None:
         )
 
 
-def _build_grasp_spec(args, obj_xy: tuple[float, float]) -> GraspSpec:
-    _require(args.view_npz is not None, "--view_npz is required")
-    npz_data = _load_npz_dict(args.view_npz)
-
-    if args.source == "labels":
-        sel = _load_label_grasp(npz_data)
-    elif args.source == "pred_cgn":
-        _require(args.checkpoint is not None, "--checkpoint is required for pred_cgn")
-        sel = _load_pred_grasp(
-            npz_data,
-            backbone="pn2",
-            checkpoint=args.checkpoint,
-            device=args.device,
-            source_name="pred_cgn",
-        )
-    elif args.source == "pred_ptv3":
-        _require(args.checkpoint is not None, "--checkpoint is required for pred_ptv3")
-        sel = _load_pred_grasp(
-            npz_data,
-            backbone="ptv3",
-            checkpoint=args.checkpoint,
-            device=args.device,
-            source_name="pred_ptv3",
-        )
-    else:
-        raise ValueError(f"Unsupported source {args.source!r}")
-    camera_pose = np.asarray(npz_data.get("camera_pose", np.eye(4)), dtype=np.float64)
-    T_world = cam_centred_to_world(
-        sel.contact_pose_SE3, camera_pose, np.zeros(3, dtype=np.float64)
-    )
-    T_mujoco = grasp_world_to_mujoco(
-        T_world, obj_z_offset=0.0, obj_xy_offset=obj_xy
-    )
-
-    return GraspSpec(
-        contact_pose_SE3=T_mujoco,
-        width_m=sel.width_m,
-        source_meta={
-            **sel.source_meta,
-            "view_npz": os.path.abspath(args.view_npz),
-        },
-    )
-
-
 def _prepare_inputs(args) -> dict[str, Any]:
     json_meta: dict[str, Any] = {}
     if args.source in CONTACT_FRAME_SOURCES:
@@ -698,21 +714,6 @@ def _prepare_inputs(args) -> dict[str, Any]:
     _require(args.mesh_path is not None, "--mesh_path could not be resolved")
     _require(os.path.isfile(args.mesh_path), f"mesh not found: {args.mesh_path}")
     return json_meta
-
-
-def _contact_candidate_from_scene(args, obj_xy: tuple[float, float]) -> dict[str, Any]:
-    grasp_raw_world = _build_grasp_spec(args, obj_xy)
-    return {
-        "kind": "contact_world",
-        "contact_pose_world": grasp_raw_world.contact_pose_SE3,
-        "width_m": grasp_raw_world.width_m,
-        "meta": {
-            **grasp_raw_world.source_meta,
-            "rank": 0,
-            "grasp_idx": grasp_raw_world.source_meta.get("point_index", 0),
-            "score": grasp_raw_world.source_meta.get("confidence", 1.0),
-        },
-    }
 
 
 def _candidate_plan(
@@ -746,6 +747,85 @@ def _candidate_plan(
         return plan, T_hand_obj, T_hand_world, "input_point_cloud_marker_to_hand_pose"
 
     raise ValueError(f"Unsupported candidate kind {kind!r}")
+
+
+def _preview_candidate_set(
+    *,
+    candidates: list[dict[str, Any]],
+    T_obj_world: np.ndarray,
+    cfg: RetargetConfig,
+    object_visual_path: str,
+    title: str,
+    color: list[int],
+) -> None:
+    grasps: list[dict[str, Any]] = []
+    for candidate in candidates:
+        plan, _T_preview_obj, _T_exec_world, _frame_desc = _candidate_plan(
+            candidate, T_obj_world, cfg
+        )
+        meta = candidate["meta"]
+        grasps.append(
+            {
+                "executed_hand_pose_world": plan.grasp_pose,
+                "color": color,
+                "name": f"{meta.get('source')}_{meta.get('rank')}_{meta.get('grasp_idx')}",
+            }
+        )
+    show_grasp_set_preview(
+        object_obj_path=object_visual_path,
+        object_pose_world=T_obj_world,
+        grasps=grasps,
+        title=title,
+        block=True,
+    )
+
+
+def _candidate_preview_key(candidate: dict[str, Any]) -> int | None:
+    grasp_idx = candidate.get("meta", {}).get("grasp_idx")
+    if grasp_idx is None:
+        return None
+    try:
+        return int(grasp_idx)
+    except (TypeError, ValueError):
+        return None
+
+
+def _candidate_preview_grasps(
+    *,
+    candidates: list[dict[str, Any]],
+    T_obj_world: np.ndarray,
+    cfg: RetargetConfig,
+    color: list[int],
+    highlight_keys: set[int] | None = None,
+    highlight_color: list[int] | None = None,
+) -> list[dict[str, Any]]:
+    grasps: list[dict[str, Any]] = []
+    highlight_keys = highlight_keys or set()
+    for candidate in candidates:
+        plan, _T_preview_obj, _T_exec_world, _frame_desc = _candidate_plan(
+            candidate, T_obj_world, cfg
+        )
+        meta = candidate["meta"]
+        key = _candidate_preview_key(candidate)
+        marker_color = (
+            highlight_color
+            if key is not None and key in highlight_keys and highlight_color is not None
+            else color
+        )
+        grasps.append(
+            {
+                "executed_hand_pose_world": plan.grasp_pose,
+                "color": marker_color,
+                "name": f"{meta.get('source')}_{meta.get('rank')}_{meta.get('grasp_idx')}",
+            }
+        )
+    return grasps
+
+
+def _preview_all_count(args) -> int:
+    if int(args.preview_all_limit) <= 0:
+        return 1_000_000_000
+    return max(int(args.preview_all_limit), int(args.grasp_index) + int(args.top_k))
 
 
 def _run_executor(args, mj_model, mj_data, plan, width_m: float, cfg: RetargetConfig):
@@ -830,10 +910,22 @@ def _run(args) -> int:
     )
     T_obj_world = _target_object_pose_world(mj_model, mj_data)
 
+    pred_backbone = None
+    pred_source_name = None
     if args.source == "labels":
         candidates = _load_label_candidates(args, obj_xy)
-    elif args.source in CONTACT_FRAME_SOURCES:
-        candidates = [_contact_candidate_from_scene(args, obj_xy)]
+    elif args.source == "pred_cgn":
+        pred_backbone = "pn2"
+        pred_source_name = "pred_cgn"
+        candidates = _load_pred_candidates(
+            args, obj_xy, backbone=pred_backbone, source_name=pred_source_name
+        )
+    elif args.source == "pred_ptv3":
+        pred_backbone = "ptv3"
+        pred_source_name = "pred_ptv3"
+        candidates = _load_pred_candidates(
+            args, obj_xy, backbone=pred_backbone, source_name=pred_source_name
+        )
     elif args.source == "dataset_h5":
         candidates = _load_dataset_h5_candidates(args)
     elif args.source == "model_h5":
@@ -843,7 +935,77 @@ def _run(args) -> int:
 
     cfg = RetargetConfig()
     cfg.start_delay_s = max(float(args.start_delay_s), 0.0)
+    cfg.pre_close_pause_s = max(float(args.pre_close_pause_s), 0.0)
     total_successes = 0
+    suppress_individual_preview = False
+
+    if not args.skip_preview and args.compare_labels_preview and args.source in {"pred_cgn", "pred_ptv3"}:
+        label_candidates = _load_label_candidates(args, obj_xy)
+        label_preview_candidates = label_candidates
+        model_preview_candidates = candidates
+        left_label = f"GT labels: green selected top-{len(label_candidates)}"
+        right_label = f"{args.source}: blue selected top-{len(candidates)}"
+
+        if args.preview_all_grasps:
+            preview_count = _preview_all_count(args)
+            label_preview_candidates = _load_label_candidates(
+                args, obj_xy, grasp_index=0, top_k=preview_count
+            )
+            model_preview_candidates = _load_pred_candidates(
+                args,
+                obj_xy,
+                backbone=str(pred_backbone),
+                source_name=str(pred_source_name),
+                grasp_index=0,
+                top_k=preview_count,
+            )
+            left_label = (
+                f"GT labels: orange candidates, green selected top-{len(label_candidates)}"
+            )
+            right_label = (
+                f"{args.source}: orange candidates, blue selected top-{len(candidates)}"
+            )
+
+        label_top_keys = {
+            key for key in (_candidate_preview_key(c) for c in label_candidates) if key is not None
+        }
+        model_top_keys = {
+            key for key in (_candidate_preview_key(c) for c in candidates) if key is not None
+        }
+        show_grasp_comparison_preview(
+            object_obj_path=object_visual_path,
+            object_pose_world=T_obj_world,
+            left_grasps=_candidate_preview_grasps(
+                candidates=label_preview_candidates,
+                T_obj_world=T_obj_world,
+                cfg=cfg,
+                color=[255, 170, 30],
+                highlight_keys=label_top_keys,
+                highlight_color=[40, 220, 60],
+            ),
+            right_grasps=_candidate_preview_grasps(
+                candidates=model_preview_candidates,
+                T_obj_world=T_obj_world,
+                cfg=cfg,
+                color=[255, 170, 30],
+                highlight_keys=model_top_keys,
+                highlight_color=[60, 130, 255],
+            ),
+            left_label=left_label,
+            right_label=right_label,
+        )
+        suppress_individual_preview = True
+    elif not args.skip_preview and len(candidates) > 1:
+        preview_color = [60, 130, 255] if args.source in {"pred_cgn", "pred_ptv3", "model_h5"} else [40, 220, 60]
+        _preview_candidate_set(
+            candidates=candidates,
+            T_obj_world=T_obj_world,
+            cfg=cfg,
+            object_visual_path=object_visual_path,
+            title=f"{args.source} top-{len(candidates)} preview",
+            color=preview_color,
+        )
+        suppress_individual_preview = True
 
     for trial_idx, candidate in enumerate(candidates):
         if trial_idx > 0:
@@ -883,7 +1045,7 @@ def _run(args) -> int:
             f"obj_rel_err_deg={rel_consistency.target_vs_live_rotation_deg:.6f}"
         )
 
-        if not args.skip_preview:
+        if not args.skip_preview and not suppress_individual_preview:
             title = (
                 f"{args.source} grasp {meta.get('grasp_idx')} "
                 f"(trial {trial_idx + 1}/{len(candidates)}, executed hand pose)"
@@ -934,6 +1096,12 @@ def _build_parser() -> argparse.ArgumentParser:
         default=5.0,
         help="Initial wait time before approach motion starts",
     )
+    p.add_argument(
+        "--pre_close_pause_s",
+        type=float,
+        default=1.0,
+        help="Pause at the reached/reoriented grasp pose before closing fingers",
+    )
     p.add_argument("--no_viewer", action="store_true", help="Run headless without MuJoCo window")
     p.add_argument(
         "--hold_viewer",
@@ -959,19 +1127,26 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--mesh_hash", type=str, default=None, help="Optional mesh_hash filter for auto selection")
     p.add_argument("--view_index", type=int, default=0, help="Index among matching auto-selected views")
     p.add_argument("--checkpoint", type=str, default=None, help="Model checkpoint for pred_*")
+    p.add_argument(
+        "--ptv3_cpe_mode",
+        type=str,
+        default="auto",
+        choices=["auto", "knn", "conv1d", "sparse3d"],
+        help="PTv3 CPE mode for checkpoint loading; auto reads checkpoint config",
+    )
     p.add_argument("--grasp_h5", type=str, default=None, help="Dataset or model-exported grasp H5")
     p.add_argument("--grasp_json", type=str, default=None, help="Model-export metadata JSON")
     p.add_argument(
         "--grasp_index",
         type=int,
         default=0,
-        help="Starting grasp index/rank for labels, dataset_h5, and model_h5 modes",
+        help="Starting grasp index/rank for ranked label, prediction, and H5 modes",
     )
     p.add_argument(
         "--top_k",
         type=int,
         default=10,
-        help="Number of ranked label/H5 grasps to simulate from --grasp_index onward",
+        help="Number of ranked label, prediction, or H5 grasps to simulate",
     )
     p.add_argument(
         "--h5_hand_depth_offset_m",
@@ -1006,6 +1181,31 @@ def _build_parser() -> argparse.ArgumentParser:
         default="cgt",
         choices=["cgt", "acronym"],
         help='Trimesh: "cgt" = parallel wireframe; "acronym" = NVlabs marker mesh',
+    )
+    p.add_argument(
+        "--compare_labels_preview",
+        action="store_true",
+        help=(
+            "For pred_cgn/pred_ptv3, show generated-label top-k and model "
+            "top-k side-by-side in one Trimesh window."
+        ),
+    )
+    p.add_argument(
+        "--preview_all_grasps",
+        action="store_true",
+        help=(
+            "With --compare_labels_preview, draw broader GT/model candidates in "
+            "orange and highlight the selected top-k in green/blue."
+        ),
+    )
+    p.add_argument(
+        "--preview_all_limit",
+        type=int,
+        default=250,
+        help=(
+            "Maximum orange background candidates per side for --preview_all_grasps; "
+            "use 0 to draw every valid candidate."
+        ),
     )
     return p
 

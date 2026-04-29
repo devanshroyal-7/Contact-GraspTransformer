@@ -20,6 +20,7 @@ class ExecPhase(Enum):
     START_DELAY = "start_delay"
     APPROACH = "approach"
     REACH_GRASP = "reach_grasp"
+    PRE_CLOSE_PAUSE = "pre_close_pause"
     CLOSE = "close"
     POST_CLOSE_PAUSE = "post_close_pause"
     LIFT = "lift"
@@ -42,6 +43,7 @@ class RetargetConfig:
     lift_phase_duration_s: float = 0.24
     approach_timeout_s: float = 8.0
     reach_timeout_s: float = 1.8
+    pre_close_pause_s: float = 1.0
     close_min_time_s: float = 0.35
     close_timeout_s: float = 5.0
     post_close_pause_s: float = 1.0
@@ -583,6 +585,24 @@ class SimpleIKGraspExecutor:
         self._last_close_width_m = width_m
         return self._close_stall_steps >= self.cfg.close_stall_steps
 
+    def _enter_pre_close_pause(self) -> None:
+        err = compute_pose_error(self.plan.grasp_pose, self.current_hand_pose())
+        self.result.pose_error_m = err.target_vs_live_translation_m
+        self.result.pose_error_deg = err.target_vs_live_rotation_deg
+        self._hand_z_at_grasp = float(self.current_hand_pose()[2, 3])
+        self._hold_q = self._current_arm_q()
+        self.phase = ExecPhase.PRE_CLOSE_PAUSE
+        self.phase_timer = 0.0
+        self.result.phase_reached = self.phase.value
+
+    def _enter_close(self) -> None:
+        self._hold_q = self._current_arm_q()
+        self._close_stall_steps = 0
+        self._last_close_width_m = self.current_gripper_width_m()
+        self.phase = ExecPhase.CLOSE
+        self.phase_timer = 0.0
+        self.result.phase_reached = self.phase.value
+
     def _finish(self) -> None:
         # Keep the grasp-pose error measured at REACH->CLOSE transition.
         # Recomputing at the end of lift would include intentional lift displacement.
@@ -639,6 +659,9 @@ class SimpleIKGraspExecutor:
         elif self.phase == ExecPhase.REACH_GRASP:
             self._gripper_ctrl = self._gripper_open_ctrl
             self._apply_arm_ctrl(self._segment_command_q())
+        elif self.phase == ExecPhase.PRE_CLOSE_PAUSE:
+            self._gripper_ctrl = self._gripper_open_ctrl
+            self._hold_step()
         elif self.phase == ExecPhase.CLOSE:
             self._gripper_ctrl = self._gripper_close_ctrl
             self._hold_step()
@@ -677,27 +700,13 @@ class SimpleIKGraspExecutor:
 
         elif self.phase == ExecPhase.REACH_GRASP:
             if self._active_target_pose is not None and self._pose_is_close(self._active_target_pose):
-                err = compute_pose_error(self.plan.grasp_pose, self.current_hand_pose())
-                self.result.pose_error_m = err.target_vs_live_translation_m
-                self.result.pose_error_deg = err.target_vs_live_rotation_deg
-                self._hand_z_at_grasp = float(self.current_hand_pose()[2, 3])
-                self._hold_q = self._current_arm_q()
-                self._close_stall_steps = 0
-                self._last_close_width_m = self.current_gripper_width_m()
-                self.phase = ExecPhase.CLOSE
-                self.phase_timer = 0.0
-                self.result.phase_reached = self.phase.value
+                self._enter_pre_close_pause()
             elif self.phase_timer >= self.cfg.reach_timeout_s:
-                err = compute_pose_error(self.plan.grasp_pose, self.current_hand_pose())
-                self.result.pose_error_m = err.target_vs_live_translation_m
-                self.result.pose_error_deg = err.target_vs_live_rotation_deg
-                self._hand_z_at_grasp = float(self.current_hand_pose()[2, 3])
-                self._hold_q = self._current_arm_q()
-                self._close_stall_steps = 0
-                self._last_close_width_m = self.current_gripper_width_m()
-                self.phase = ExecPhase.CLOSE
-                self.phase_timer = 0.0
-                self.result.phase_reached = self.phase.value
+                self._enter_pre_close_pause()
+
+        elif self.phase == ExecPhase.PRE_CLOSE_PAUSE:
+            if self.phase_timer >= self.cfg.pre_close_pause_s:
+                self._enter_close()
 
         elif self.phase == ExecPhase.CLOSE:
             if self._close_complete():

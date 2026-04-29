@@ -12,7 +12,7 @@ import trimesh.util
 import numpy as np
 
 from eval.ik_retarget import contact_to_hand_pose
-from eval.legacy.utils import make_grasp_pose
+from eval.utils import make_grasp_pose
 
 
 def _hand_to_marker_pose(T_hand: np.ndarray) -> np.ndarray:
@@ -131,4 +131,106 @@ def show_grasp_preview(
         raise ValueError('preview must be "cgt" or "acronym"')
 
     print(f"Trimesh preview: close the window to continue.\n  {title}")
+    scene.show(block=block)
+
+
+def show_grasp_set_preview(
+    *,
+    object_obj_path: str,
+    object_pose_world: np.ndarray,
+    grasps: list[dict],
+    title: str = "Top-k grasp preview",
+    block: bool = True,
+) -> None:
+    """Object mesh + multiple executed hand poses in one Trimesh scene.
+
+    Each grasp dict should contain ``executed_hand_pose_world`` and may include
+    ``color`` and ``name`` fields. This is meant for inspecting ranked model or
+    label candidates before MuJoCo executes them one-by-one.
+    """
+    T_obj = np.asarray(object_pose_world, dtype=np.float64)
+    mesh = trimesh.load(object_obj_path, force="mesh")
+    n_f = len(mesh.faces)
+    obj_rgba = np.array([165, 200, 230, 210], dtype=np.uint8)
+    mesh.visual.face_colors = np.tile(obj_rgba, (n_f, 1))
+
+    scene = trimesh.Scene()
+    scene.add_geometry(mesh, geom_name="object", transform=T_obj)
+
+    for i, grasp in enumerate(grasps):
+        T_hand = np.asarray(grasp["executed_hand_pose_world"], dtype=np.float64).reshape(4, 4)
+        T_marker = _hand_to_marker_pose(T_hand)
+        color = grasp.get("color", [40, 220, 60])
+        g = create_gripper_marker(color=color)
+        g.apply_transform(T_marker)
+        name = str(grasp.get("name", f"grasp_{i}"))
+        scene.add_geometry(g, geom_name=name)
+
+    print(f"Trimesh preview: close the window to continue.\n  {title}")
+    scene.show(block=block)
+
+
+def show_grasp_comparison_preview(
+    *,
+    object_obj_path: str,
+    object_pose_world: np.ndarray,
+    left_grasps: list[dict],
+    right_grasps: list[dict],
+    left_label: str = "GT labels",
+    right_label: str = "Model predictions",
+    separation_m: float = 0.35,
+    block: bool = True,
+) -> None:
+    """Side-by-side object mesh + two ranked grasp sets.
+
+    The object is duplicated left/right so ground-truth label grasps and model
+    grasps can be inspected in the same view without overlapping each other.
+    """
+    T_obj = np.asarray(object_pose_world, dtype=np.float64)
+    base_mesh = trimesh.load(object_obj_path, force="mesh")
+    obj_rgba = np.array([165, 200, 230, 210], dtype=np.uint8)
+    base_mesh.visual.face_colors = np.tile(obj_rgba, (len(base_mesh.faces), 1))
+
+    scene = trimesh.Scene()
+
+    def add_side(
+        *,
+        side_name: str,
+        x_offset: float,
+        grasps: list[dict],
+        default_color: list[int],
+    ) -> None:
+        T_shift = np.eye(4, dtype=np.float64)
+        T_shift[0, 3] = float(x_offset)
+
+        mesh = base_mesh.copy()
+        scene.add_geometry(mesh, geom_name=f"{side_name}_object", transform=T_shift @ T_obj)
+
+        for i, grasp in enumerate(grasps):
+            T_hand = np.asarray(grasp["executed_hand_pose_world"], dtype=np.float64).reshape(4, 4)
+            T_marker = _hand_to_marker_pose(T_shift @ T_hand)
+            color = grasp.get("color", default_color)
+            g = create_gripper_marker(color=color)
+            g.apply_transform(T_marker)
+            name = str(grasp.get("name", f"{side_name}_grasp_{i}"))
+            scene.add_geometry(g, geom_name=name)
+
+    add_side(
+        side_name="left_gt",
+        x_offset=-0.5 * float(separation_m),
+        grasps=left_grasps,
+        default_color=[255, 170, 30],
+    )
+    add_side(
+        side_name="right_model",
+        x_offset=0.5 * float(separation_m),
+        grasps=right_grasps,
+        default_color=[60, 130, 255],
+    )
+
+    print(
+        "Trimesh comparison preview: close the window to continue.\n"
+        f"  LEFT = {left_label}\n"
+        f"  RIGHT = {right_label}"
+    )
     scene.show(block=block)

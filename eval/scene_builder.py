@@ -43,7 +43,11 @@ def _get_panda_xml_path() -> str:
     )
 
 
-CACHE_DIR = os.path.join(os.path.dirname(__file__), "cache")
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CACHE_DIR = os.environ.get(
+    "CGT_EVAL_CACHE",
+    os.path.join(REPO_ROOT, ".cache", "eval_meshes"),
+)
 
 
 def _mesh_hash(mesh_path: str, scale: float) -> str:
@@ -58,7 +62,7 @@ def _decompose_mesh(obj_path: str, scale: float, cache_dir: str = CACHE_DIR) -> 
     key = _mesh_hash(obj_path, scale)
     out_dir = os.path.join(cache_dir, key)
 
-    if os.path.isdir(out_dir) and any(f.endswith(".xml") for f in os.listdir(out_dir)):
+    if os.path.isdir(out_dir) and _find_collision_meshes(out_dir) != ["object.obj"]:
         return out_dir
 
     os.makedirs(out_dir, exist_ok=True)
@@ -97,11 +101,14 @@ def _decompose_mesh(obj_path: str, scale: float, cache_dir: str = CACHE_DIR) -> 
 
 
 def _find_collision_meshes(cache_dir: str) -> list[str]:
-    files = [
-        f
-        for f in sorted(os.listdir(cache_dir))
-        if f.endswith(".obj") and ("collision" in f or "decomp" in f)
-    ]
+    files: list[str] = []
+    for root, _dirs, names in os.walk(cache_dir):
+        for name in sorted(names):
+            if not name.endswith(".obj"):
+                continue
+            if "collision" in name or "decomp" in name:
+                files.append(os.path.relpath(os.path.join(root, name), cache_dir))
+    files.sort()
     if not files:
         files = [
             f for f in sorted(os.listdir(cache_dir)) if f.endswith(".obj") and f != "object.obj"

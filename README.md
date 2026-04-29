@@ -122,18 +122,25 @@ python -m eval.visualize_grasp \
   --source pred_cgn \
   --checkpoint <pointnetpp_checkpoint.pt> \
   --view_npz data/out/test/Mug/40f9a6cc6b2c3b3a78060a3a3a55e18f/000.npz \
-  --start_delay_s 0
+  --start_delay_s 0 \
+  --top_k 5
 
 # PTv3 model
 python -m eval.visualize_grasp \
   --source pred_ptv3 \
   --checkpoint <ptv3_checkpoint.pt> \
   --view_npz data/out/test/Mug/40f9a6cc6b2c3b3a78060a3a3a55e18f/000.npz \
-  --start_delay_s 0
+  --start_delay_s 0 \
+  --top_k 5
 ```
 
 The `.npz` supplies the point cloud and frame information; the matching MuJoCo
 mesh is resolved from `manifest.json`. Success is based on target-object lift.
+Top-k model candidates are previewed together in Trimesh and then executed as
+separate MuJoCo trials.
+For visual comparison, add `--compare_labels_preview --preview_all_grasps`: GT
+is shown on the left, model predictions on the right, orange means non-selected
+candidates, green means selected GT top-k, and blue means selected model top-k.
 Add `--no_viewer --skip_preview` when running headless batches.
 See [`SETUP.md`](./SETUP.md#grasp-visualization--mujoco-execution) for dataset
 label replay, raw ACRONYM H5 replay, and exported prediction replay commands.

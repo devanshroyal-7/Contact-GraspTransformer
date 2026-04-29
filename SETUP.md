@@ -102,16 +102,28 @@ python -m eval.visualize_grasp \
 # 3) Evaluate a PointNet++ checkpoint on the same view.
 python -m eval.visualize_grasp \
   --source pred_cgn \
-  --checkpoint <pointnetpp_checkpoint.pt> \
+  --checkpoint models/checkpoints/best_pn2.pt \
   --view_npz data/out/test/Mug/40f9a6cc6b2c3b3a78060a3a3a55e18f/000.npz \
-  --start_delay_s 0
+  --start_delay_s 0 \
+  --top_k 5
 
 # 4) Evaluate a PTv3 checkpoint on the same view.
 python -m eval.visualize_grasp \
   --source pred_ptv3 \
-  --checkpoint <ptv3_checkpoint.pt> \
+  --checkpoint models/checkpoints/best_ptv3.pt \
   --view_npz data/out/test/Mug/40f9a6cc6b2c3b3a78060a3a3a55e18f/000.npz \
-  --start_delay_s 0
+  --start_delay_s 0 \
+  --top_k 5
+
+# Optional: show GT labels and model predictions side-by-side in Trimesh.
+python -m eval.visualize_grasp \
+  --source pred_cgn \
+  --checkpoint <pointnetpp_checkpoint.pt> \
+  --view_npz data/out/test/Mug/40f9a6cc6b2c3b3a78060a3a3a55e18f/000.npz \
+  --start_delay_s 0 \
+  --top_k 5 \
+  --compare_labels_preview \
+  --preview_all_grasps
 ```
 
 Use `--no_viewer --skip_preview` only for headless batch runs after the visual
@@ -122,8 +134,8 @@ path looks correct.
 | Source | Grasp comes from | Main use |
 |---|---|---|
 | `labels` | Generated `data/out/*.npz` labels | Validate the dataset-to-MuJoCo pipeline. |
-| `pred_cgn` | PointNet++ checkpoint prediction from an `.npz` point cloud | Evaluate PointNet++ model grasps. |
-| `pred_ptv3` | PTv3 checkpoint prediction from an `.npz` point cloud | Evaluate PTv3 model grasps. |
+| `pred_cgn` | PointNet++ checkpoint predictions from an `.npz` point cloud | Evaluate PointNet++ model grasps. |
+| `pred_ptv3` | PTv3 checkpoint predictions from an `.npz` point cloud | Evaluate PTv3 model grasps. |
 | `dataset_h5` | Raw ACRONYM `.h5` grasps | Low-level simulator sanity check. |
 | `model_h5` | Exported model `.h5` + `.json` predictions | Replay saved predictions without loading a checkpoint. |
 
@@ -179,7 +191,12 @@ python -m eval.visualize_grasp \
 
 - Success is physical target-object lift: `object_lift_m >= 0.03`.
 - Pose error is diagnostic only; hand motion alone is not success.
+- The MuJoCo executor reaches/reorients the gripper, pauses open for `--pre_close_pause_s` seconds, then closes, pauses, and lifts.
 - `labels` mode ranks generated candidates because `.npz` label confidence is usually binary.
-- `--top_k` runs multiple ranked grasps, rebuilding the scene for each trial.
+- `pred_cgn` and `pred_ptv3` rank all model-predicted point grasps by confidence.
+- `--top_k` previews ranked candidates together in Trimesh, then runs one MuJoCo trial per grasp.
+- `--compare_labels_preview` shows GT labels on the left and model predictions on the right. MuJoCo still executes the selected model grasps for `pred_cgn`/`pred_ptv3`.
+- Add `--preview_all_grasps` to draw non-selected candidates in orange; selected GT top-k is green and selected model top-k is blue.
+- PTv3 checkpoint loading uses the checkpoint's saved `cpe_mode` by default. Sparse3D PTv3 checkpoints require `spconv` in the evaluation environment.
 - `dataset_h5` and `model_h5` use H5 object mass when present.
 - `model_h5` requires non-empty `grasps/transforms`, `grasps/widths`, and `grasps/scores`.
