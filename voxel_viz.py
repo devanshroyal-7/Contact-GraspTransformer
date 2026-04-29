@@ -132,7 +132,7 @@ def draw_geometries(geometries, **kwargs):
             max_bound = np.max([bound.get_max_bound() for bound in bounds], axis=0)
             kwargs["lookat"] = ((min_bound + max_bound) * 0.5).tolist()
 
-    kwargs.setdefault("front", [-1.0, -1.0, -0.8])
+    kwargs.setdefault("front", [-1.0, -1.0, 1.0])
     kwargs.setdefault("up", [0.0, 0.0, 1.0])
     kwargs.setdefault("zoom", 0.7)
 
