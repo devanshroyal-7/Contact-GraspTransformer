@@ -220,6 +220,120 @@ python data/generate_data.py --mesh_hash 2997f21fa426e18a6ab1a25d0e8f3590
 | `widths`        | (N,)    | float32 | Grasp width (0.08m for Panda)               |
 | `camera_pose`   | (4, 4)  | float64 | Camera extrinsic (OpenCV, mean-centred)     |
 
+## Voxel visualization tools
+
+Both voxel visualization scripts open interactive Open3D windows. If GLFW
+fails on Linux Wayland, use the XWayland wrapper shown in `SETUP.md`.
+
+### Synthetic / explanatory PTv3 voxel views (`voxel_viz.py`)
+
+`voxel_viz.py` visualizes a generated `.npz` point cloud without loading a
+trained checkpoint. It is useful for understanding the voxel grid, pooling
+stages, sparse CPE behavior, and serialization order used by the PTv3-style
+backbone helpers.
+
+```bash
+# Default: pooling view for the example Mug sample
+python3 voxel_viz.py
+
+# Pooling view for a specific generated sample
+python3 voxel_viz.py data/out/train/Mug/2997f21fa426e18a6ab1a25d0e8f3590/000.npz
+
+# Show all available visualization modes one after another
+python3 voxel_viz.py <sample.npz> --mode all
+```
+
+Main modes:
+
+| Mode        | What it shows |
+|-------------|---------------|
+| `pooling`   | Input voxelization, then repeated bit-shift voxel pooling stages. |
+| `sparse`    | SparseCPE feature changes on the fixed occupied voxel grid. |
+| `z`         | Morton/Z-order serialization path through occupied voxels. |
+| `tz`        | Transposed Morton serialization using rotated coordinate order. |
+| `hilbert`   | 3-D Hilbert serialization path through occupied voxels. |
+| `thilbert` | Transposed Hilbert serialization. |
+| `all`       | Runs pooling, sparse, and every serialization view. |
+
+Useful options:
+
+```bash
+# Change base voxel size in metres
+python3 voxel_viz.py <sample.npz> --grid-size 0.01
+
+# Change how many pooling windows are shown
+python3 voxel_viz.py <sample.npz> --mode pooling --stages 3
+
+# Color sparse view by different feature statistics
+python3 voxel_viz.py <sample.npz> --mode sparse --sparse-color delta_norm
+python3 voxel_viz.py <sample.npz> --mode sparse --sparse-color after_norm
+python3 voxel_viz.py <sample.npz> --mode sparse --sparse-color channel --feature-channel 0
+python3 voxel_viz.py <sample.npz> --mode sparse --sparse-color signed_delta --feature-channel 0
+
+# Force device for sparse mode; sparse3d requires spconv
+python3 voxel_viz.py <sample.npz> --mode sparse --device cpu
+python3 voxel_viz.py <sample.npz> --mode sparse --device cuda
+
+# Reduce dense serialization path lines
+python3 voxel_viz.py <sample.npz> --mode hilbert --curve-line-step 4
+
+# Set a minimum Hilbert precision; 0 auto-selects from voxel span
+python3 voxel_viz.py <sample.npz> --mode hilbert --hilbert-bits 10
+```
+
+### Real inference voxel views (`inference_voxel_viz.py`)
+
+`inference_voxel_viz.py` loads a trained checkpoint, runs the same point-cloud
+preprocessing and model forward pass used by `inference.py`, and records voxel
+locations from each actual PTv3 `VoxelPoolDown` layer. Use this when you want
+to see the voxel size and location changes that happen during model inference.
+
+```bash
+python3 inference_voxel_viz.py \
+  --ckpt checkpoints/best.pt \
+  --points data/out/train/Mug/2997f21fa426e18a6ab1a25d0e8f3590/000.npz
+```
+
+The script displays the input voxelization first, then each encoder pooling
+stage from the real forward pass. It also prints the voxel size and occupied
+voxel count for each window.
+
+Useful options:
+
+```bash
+# Use a different checkpoint or input cloud
+python3 inference_voxel_viz.py --ckpt checkpoints/last.pt --points <sample.npz>
+
+# Force CPU/GPU selection
+python3 inference_voxel_viz.py --ckpt checkpoints/best.pt --points <sample.npz> --device cpu
+python3 inference_voxel_viz.py --ckpt checkpoints/best.pt --points <sample.npz> --device cuda
+
+# Override checkpoint fallback settings if config is missing
+python3 inference_voxel_viz.py --ckpt <ckpt.pt> --points <sample.npz> --cpe-mode knn
+python3 inference_voxel_viz.py --ckpt <ckpt.pt> --points <sample.npz> --num-points 4096
+
+# Color voxels and optionally overlay pooled point centers
+python3 inference_voxel_viz.py --ckpt checkpoints/best.pt --points <sample.npz> --color feature_norm
+python3 inference_voxel_viz.py --ckpt checkpoints/best.pt --points <sample.npz> --color height
+python3 inference_voxel_viz.py --ckpt checkpoints/best.pt --points <sample.npz> --show-points
+
+# Draw fewer voxel cubes per window for faster rendering
+python3 inference_voxel_viz.py --ckpt checkpoints/best.pt --points <sample.npz> --max-voxels 3000
+
+# Make the random point sampling reproducible
+python3 inference_voxel_viz.py --ckpt checkpoints/best.pt --points <sample.npz> --seed 0
+```
+
+Notes:
+
+- `inference_voxel_viz.py` only supports PTv3 checkpoints. A PointNet++ (`pn2`)
+  checkpoint has no voxel-pooling layers to hook.
+- The input `.npz` can be any generated file containing a `points` array. The
+  loader also accepts `.npy`, `.ply`, `.pcd`, `.xyz`, and `.txt` point clouds.
+- `--color feature_norm` colors pooled voxels by the feature norm after each
+  pooling layer. The input voxelization falls back to height coloring because
+  no model features exist yet.
+
 ## Key design decisions
 
 - **No translation re-scaling on grasps**: ACRONYM stores grasp transforms

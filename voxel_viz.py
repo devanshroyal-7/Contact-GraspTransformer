@@ -121,6 +121,9 @@ def voxels_to_gradient_mesh(grid_coord, voxel_size, origin, values=None):
 def draw_geometries(geometries, **kwargs):
     import open3d as o3d
 
+    print_camera = kwargs.pop("print_camera", False)
+    print_camera_key = kwargs.pop("print_camera_key", "P")
+
     if "lookat" not in kwargs:
         bounds = [
             geometry.get_axis_aligned_bounding_box()
@@ -132,9 +135,55 @@ def draw_geometries(geometries, **kwargs):
             max_bound = np.max([bound.get_max_bound() for bound in bounds], axis=0)
             kwargs["lookat"] = ((min_bound + max_bound) * 0.5).tolist()
 
-    kwargs.setdefault("front", [-1.0, -1.0, 1.0])
-    kwargs.setdefault("up", [0.0, 0.0, 1.0])
+    kwargs.setdefault("front", [0.716676, 0.049010, -0.695683])
+    kwargs.setdefault("up", [-0.122142, -0.973289, -0.194395])
     kwargs.setdefault("zoom", 0.7)
+
+    if print_camera:
+        window_name = kwargs.pop("window_name", "Open3D")
+        width = kwargs.pop("width", 1920)
+        height = kwargs.pop("height", 1080)
+        left = kwargs.pop("left", 50)
+        top = kwargs.pop("top", 50)
+
+        vis = o3d.visualization.VisualizerWithKeyCallback()
+        vis.create_window(
+            window_name=window_name,
+            width=width,
+            height=height,
+            left=left,
+            top=top,
+        )
+        for geometry in geometries:
+            vis.add_geometry(geometry)
+
+        view = vis.get_view_control()
+        view.set_front(kwargs["front"])
+        view.set_up(kwargs["up"])
+        view.set_lookat(kwargs["lookat"])
+        view.set_zoom(kwargs["zoom"])
+
+        def print_current_camera(vis):
+            view = vis.get_view_control()
+            print("Current Open3D camera:")
+            try:
+                print(f'  front = {np.asarray(view.get_front()).round(6).tolist()}')
+                print(f'  up = {np.asarray(view.get_up()).round(6).tolist()}')
+                print(f'  lookat = {np.asarray(view.get_lookat()).round(6).tolist()}')
+                print(f"  zoom = {view.get_zoom():.6f}")
+            except AttributeError:
+                camera = view.convert_to_pinhole_camera_parameters()
+                print("  This Open3D version does not expose front/up getters.")
+                print("  extrinsic =")
+                print(np.asarray(camera.extrinsic).round(6))
+            return False
+
+        key_code = ord(print_camera_key.upper())
+        vis.register_key_callback(key_code, print_current_camera)
+        print(f"Press {print_camera_key.upper()} in the Open3D window to print camera values.")
+        vis.run()
+        vis.destroy_window()
+        return
 
     o3d.visualization.draw_geometries(geometries, **kwargs)
 
@@ -316,6 +365,7 @@ def visualize_serialization(points, args, resolved_path, pattern):
         window_name=f"{title} 1D serialization over occupied voxels",
         width=1200,
         height=800,
+        print_camera=args.print_camera,
     )
 
 
@@ -380,6 +430,7 @@ def visualize_sparse_conv(points, args, resolved_path):
         window_name=f"SparseCPE feature color: {args.sparse_color}",
         width=1000,
         height=700,
+        print_camera=args.print_camera,
     )
 
 
@@ -395,6 +446,7 @@ def visualize_voxel_pooling(points, args, resolved_path):
         window_name="Input voxelization",
         width=800,
         height=600,
+        print_camera=args.print_camera,
     )
 
     current_grid_size = args.grid_size
@@ -414,6 +466,7 @@ def visualize_voxel_pooling(points, args, resolved_path):
             window_name=f"Encoder stage {stage} (grid {current_grid_size:.2f} m)",
             width=1000,
             height=700,
+            print_camera=args.print_camera,
         )
 
     print("\nVisualization complete. All stages processed.")
@@ -497,6 +550,11 @@ def parse_args():
             "Connect every N-th voxel along the serialization order to reduce "
             "path density (1 keeps all)."
         ),
+    )
+    parser.add_argument(
+        "--print-camera",
+        action="store_true",
+        help="Press P in the Open3D window to print the current camera values.",
     )
     return parser.parse_args()
 
