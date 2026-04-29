@@ -3,7 +3,8 @@
 This is the inference-time counterpart to ``voxel_viz.py``. It loads a trained
 checkpoint, runs the same preprocessing and forward pass used by
 ``GraspPredictor.predict``, and records the voxel grids produced by each PTv3
-``VoxelPoolDown`` layer.
+``VoxelPoolDown`` and ``VoxelUnpoolUp`` layer, plus the final per-point
+features that feed the ContactGraspNet heads.
 
 Example:
     python inference_voxel_viz.py --ckpt checkpoints/best.pt \
@@ -58,6 +59,18 @@ def _tensor_to_numpy(tensor: torch.Tensor, batch_index: int = 0) -> np.ndarray:
 
 def _valid_rows(array: np.ndarray, valid: np.ndarray) -> np.ndarray:
     return array[valid.astype(bool)]
+
+
+def _aggregate_grid_values(
+    grid_coord: np.ndarray,
+    values: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Average per-point values onto occupied voxel coordinates."""
+    unique_grid, inverse = np.unique(grid_coord, axis=0, return_inverse=True)
+    totals = np.zeros(len(unique_grid), dtype=np.float64)
+    np.add.at(totals, inverse, values.astype(np.float64))
+    counts = np.bincount(inverse).astype(np.float64)
+    return unique_grid, totals / np.maximum(counts, 1.0)
 
 
 def _make_point_cloud(points: np.ndarray):
@@ -154,7 +167,12 @@ def _maybe_subsample_frame(frame: VoxelFrame, max_voxels: int, seed: int) -> Vox
     rng = np.random.default_rng(seed)
     keep = np.sort(rng.choice(len(frame.grid_coord), max_voxels, replace=False))
     feature_norm = None if frame.feature_norm is None else frame.feature_norm[keep]
-    xyz = None if frame.xyz is None else frame.xyz[keep]
+    if frame.xyz is None:
+        xyz = None
+    elif len(frame.xyz) == len(frame.grid_coord):
+        xyz = frame.xyz[keep]
+    else:
+        xyz = frame.xyz
     return VoxelFrame(
         name=f"{frame.name} (showing {max_voxels}/{len(frame.grid_coord)} voxels)",
         grid_coord=frame.grid_coord[keep],
@@ -171,7 +189,7 @@ def capture_inference_voxels(
     *,
     seed: Optional[int] = 0,
 ) -> tuple[list[VoxelFrame], dict[str, np.ndarray]]:
-    """Run one real inference pass and return voxel frames from the PTv3 encoder."""
+    """Run one real inference pass and return PTv3 encoder/decoder voxel frames."""
     backbone = _find_ptv3_backbone(predictor)
     device = predictor.device
     rng = np.random.default_rng(seed)
@@ -186,6 +204,9 @@ def capture_inference_voxels(
     )
     base_origin = base_origin_centred + centroid.squeeze(0).astype(np.float64)
     unique_base_grid = np.unique(base_grid, axis=0)
+    level_strides = [1]
+    for stride in backbone.pool_strides:
+        level_strides.append(level_strides[-1] * int(stride))
 
     frames: list[VoxelFrame] = [
         VoxelFrame(
@@ -198,9 +219,20 @@ def capture_inference_voxels(
     ]
 
     hooks = []
+    skip_levels = {}
 
     def make_hook(stage_index: int, cumulative_stride: int):
-        def hook(_module, _inputs, output):
+        skip_index = stage_index - 1
+
+        def hook(_module, inputs, output):
+            skip_xyz, skip_gc, _skip_feat, skip_valid = inputs
+            skip_valid_np = _tensor_to_numpy(skip_valid).astype(bool)
+            skip_levels[skip_index] = (
+                _valid_rows(_tensor_to_numpy(skip_xyz), skip_valid_np),
+                _valid_rows(_tensor_to_numpy(skip_gc), skip_valid_np).astype(np.int64),
+                float(backbone.grid_size * level_strides[skip_index]),
+            )
+
             new_xyz, new_gc, new_feat, new_valid, _inverse = output
             valid = _tensor_to_numpy(new_valid).astype(bool)
             grid = _valid_rows(_tensor_to_numpy(new_gc), valid)
@@ -220,6 +252,31 @@ def capture_inference_voxels(
 
         return hook
 
+    def make_up_hook(skip_index: int):
+        def hook(_module, _inputs, output):
+            if skip_index not in skip_levels:
+                return
+
+            skip_xyz, skip_grid, voxel_size = skip_levels[skip_index]
+            valid_count = len(skip_grid)
+            feat = _tensor_to_numpy(output)[:valid_count]
+            grid, values = _aggregate_grid_values(
+                skip_grid,
+                np.linalg.norm(feat, axis=1),
+            )
+            frames.append(
+                VoxelFrame(
+                    name=f"Decoder unpool to level {skip_index}",
+                    grid_coord=grid.astype(np.int64),
+                    voxel_size=voxel_size,
+                    origin=base_origin,
+                    xyz=(skip_xyz + centroid.squeeze(0)).astype(np.float64),
+                    feature_norm=values,
+                )
+            )
+
+        return hook
+
     cumulative_stride = 1
     for stage_index, (down_block, stride) in enumerate(
         zip(backbone.down_blocks, backbone.pool_strides),
@@ -227,6 +284,8 @@ def capture_inference_voxels(
     ):
         cumulative_stride *= int(stride)
         hooks.append(down_block.register_forward_hook(make_hook(stage_index, cumulative_stride)))
+    for skip_index, up_block in enumerate(backbone.up_blocks):
+        hooks.append(up_block.register_forward_hook(make_up_hook(skip_index)))
 
     try:
         xyz = torch.from_numpy(centred).unsqueeze(0).to(device)
@@ -237,6 +296,21 @@ def capture_inference_voxels(
             hook.remove()
 
     scores = preds["confidence"][0].detach().cpu().numpy()
+    point_features = preds["features"][0].detach().cpu().numpy().T
+    final_grid, final_values = _aggregate_grid_values(
+        base_grid,
+        np.linalg.norm(point_features, axis=1),
+    )
+    frames.append(
+        VoxelFrame(
+            name="Final point features",
+            grid_coord=final_grid.astype(np.int64),
+            voxel_size=float(backbone.grid_size),
+            origin=base_origin,
+            xyz=sampled,
+            feature_norm=final_values,
+        )
+    )
     summary = {
         "sampled": sampled,
         "centroid": centroid.squeeze(0),
