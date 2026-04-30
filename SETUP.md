@@ -193,10 +193,12 @@ python -m eval.visualize_grasp \
 - Pose error is diagnostic only; hand motion alone is not success.
 - The MuJoCo executor reaches/reorients the gripper, pauses open for `--pre_close_pause_s` seconds, then closes, pauses, and lifts.
 - `labels` mode ranks generated candidates because `.npz` label confidence is usually binary.
+- `--label_conf_thresh` defaults to `0.5` and only controls generated GT/label selection, not model predictions.
 - `pred_cgn` and `pred_ptv3` rank all model-predicted point grasps by confidence.
 - `--top_k` previews ranked candidates together in Trimesh, then runs one MuJoCo trial per grasp.
 - `--compare_labels_preview` shows GT labels on the left and model predictions on the right. MuJoCo still executes the selected model grasps for `pred_cgn`/`pred_ptv3`.
-- Add `--preview_all_grasps` to draw non-selected candidates in orange; selected GT top-k is green and selected model top-k is blue.
+- Add `--preview_all_grasps` to draw a capped translucent-orange background set; selected GT top-k is green and selected model top-k is blue.
+- `--preview_all_limit` defaults to `40` per side. Increase it for denser context, or use `0` only when you really want every valid candidate.
 - PTv3 checkpoint loading uses the checkpoint's saved `cpe_mode` by default. Sparse3D PTv3 checkpoints require `spconv` in the evaluation environment.
 - `dataset_h5` and `model_h5` use H5 object mass when present.
 - `model_h5` requires non-empty `grasps/transforms`, `grasps/widths`, and `grasps/scores`.

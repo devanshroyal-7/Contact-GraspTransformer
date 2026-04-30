@@ -139,8 +139,9 @@ mesh is resolved from `manifest.json`. Success is based on target-object lift.
 Top-k model candidates are previewed together in Trimesh and then executed as
 separate MuJoCo trials.
 For visual comparison, add `--compare_labels_preview --preview_all_grasps`: GT
-is shown on the left, model predictions on the right, orange means non-selected
-candidates, green means selected GT top-k, and blue means selected model top-k.
+is shown on the left, model predictions on the right, translucent orange markers
+are a capped background set, green means selected GT top-k, and blue means
+selected model top-k.
 Add `--no_viewer --skip_preview` when running headless batches.
 See [`SETUP.md`](./SETUP.md#grasp-visualization--mujoco-execution) for dataset
 label replay, raw ACRONYM H5 replay, and exported prediction replay commands.

@@ -151,6 +151,9 @@ def _load_pred_candidates(
         args.device,
         ptv3_cpe_mode=args.ptv3_cpe_mode,
     )
+    torch.manual_seed(int(args.eval_seed))
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(int(args.eval_seed))
     points = np.asarray(npz_data["points"], dtype=np.float32)
     if points.ndim != 2 or points.shape[1] != 3:
         raise ValueError(f"Expected points shape (N,3), got {points.shape}")
@@ -237,6 +240,7 @@ def _load_label_candidates(
     base = np.asarray(npz_data["base_dirs"], dtype=np.float64)
     widths = np.asarray(npz_data["widths"], dtype=np.float64).reshape(-1)
     camera_pose = np.asarray(npz_data.get("camera_pose", np.eye(4)), dtype=np.float64)
+    label_conf_thresh = float(args.label_conf_thresh)
 
     if len(points) == 0:
         raise ValueError("No points found in view npz")
@@ -244,7 +248,7 @@ def _load_label_candidates(
         raise ValueError("view npz label arrays must have matching first dimension")
 
     valid = (
-        (conf >= 0.5)
+        (conf >= label_conf_thresh)
         & np.isfinite(conf)
         & np.isfinite(widths)
         & (widths > 0.0)
@@ -253,7 +257,9 @@ def _load_label_candidates(
     )
     indices = np.flatnonzero(valid)
     if len(indices) == 0:
-        raise ValueError("No generated label candidates with confidence >= 0.5")
+        raise ValueError(
+            f"No generated label candidates with confidence >= {label_conf_thresh:g}"
+        )
 
     world_app_z = np.empty(len(indices), dtype=np.float64)
     for j, idx in enumerate(indices):
@@ -798,6 +804,8 @@ def _candidate_preview_grasps(
     color: list[int],
     highlight_keys: set[int] | None = None,
     highlight_color: list[int] | None = None,
+    tube_radius: float = 0.001,
+    highlight_tube_radius: float = 0.0025,
 ) -> list[dict[str, Any]]:
     grasps: list[dict[str, Any]] = []
     highlight_keys = highlight_keys or set()
@@ -812,10 +820,16 @@ def _candidate_preview_grasps(
             if key is not None and key in highlight_keys and highlight_color is not None
             else color
         )
+        marker_radius = (
+            highlight_tube_radius
+            if key is not None and key in highlight_keys and highlight_color is not None
+            else tube_radius
+        )
         grasps.append(
             {
                 "executed_hand_pose_world": plan.grasp_pose,
                 "color": marker_color,
+                "tube_radius": marker_radius,
                 "name": f"{meta.get('source')}_{meta.get('rank')}_{meta.get('grasp_idx')}",
             }
         )
@@ -938,64 +952,77 @@ def _run(args) -> int:
     cfg.pre_close_pause_s = max(float(args.pre_close_pause_s), 0.0)
     total_successes = 0
     suppress_individual_preview = False
+    comparison_preview_shown = False
 
     if not args.skip_preview and args.compare_labels_preview and args.source in {"pred_cgn", "pred_ptv3"}:
-        label_candidates = _load_label_candidates(args, obj_xy)
-        label_preview_candidates = label_candidates
-        model_preview_candidates = candidates
-        left_label = f"GT labels: green selected top-{len(label_candidates)}"
-        right_label = f"{args.source}: blue selected top-{len(candidates)}"
+        try:
+            label_candidates = _load_label_candidates(args, obj_xy)
+            label_preview_candidates = label_candidates
+            model_preview_candidates = candidates
+            left_label = f"GT labels: green selected top-{len(label_candidates)}"
+            right_label = f"{args.source}: blue selected top-{len(candidates)}"
 
-        if args.preview_all_grasps:
-            preview_count = _preview_all_count(args)
-            label_preview_candidates = _load_label_candidates(
-                args, obj_xy, grasp_index=0, top_k=preview_count
-            )
-            model_preview_candidates = _load_pred_candidates(
-                args,
-                obj_xy,
-                backbone=str(pred_backbone),
-                source_name=str(pred_source_name),
-                grasp_index=0,
-                top_k=preview_count,
-            )
-            left_label = (
-                f"GT labels: orange candidates, green selected top-{len(label_candidates)}"
-            )
-            right_label = (
-                f"{args.source}: orange candidates, blue selected top-{len(candidates)}"
-            )
+            if args.preview_all_grasps:
+                preview_count = _preview_all_count(args)
+                label_preview_candidates = _load_label_candidates(
+                    args, obj_xy, grasp_index=0, top_k=preview_count
+                )
+                model_preview_candidates = _load_pred_candidates(
+                    args,
+                    obj_xy,
+                    backbone=str(pred_backbone),
+                    source_name=str(pred_source_name),
+                    grasp_index=0,
+                    top_k=preview_count,
+                )
+                left_label = (
+                    f"GT labels: orange candidates, green selected top-{len(label_candidates)}"
+                )
+                right_label = (
+                    f"{args.source}: orange candidates, blue selected top-{len(candidates)}"
+                )
 
-        label_top_keys = {
-            key for key in (_candidate_preview_key(c) for c in label_candidates) if key is not None
-        }
-        model_top_keys = {
-            key for key in (_candidate_preview_key(c) for c in candidates) if key is not None
-        }
-        show_grasp_comparison_preview(
-            object_obj_path=object_visual_path,
-            object_pose_world=T_obj_world,
-            left_grasps=_candidate_preview_grasps(
+            label_top_keys = {
+                key for key in (_candidate_preview_key(c) for c in label_candidates) if key is not None
+            }
+            model_top_keys = {
+                key for key in (_candidate_preview_key(c) for c in candidates) if key is not None
+            }
+            show_grasp_comparison_preview(
+                object_obj_path=object_visual_path,
+                object_pose_world=T_obj_world,
+                left_grasps=_candidate_preview_grasps(
                 candidates=label_preview_candidates,
                 T_obj_world=T_obj_world,
                 cfg=cfg,
-                color=[255, 170, 30],
+                color=[255, 170, 30, 70],
                 highlight_keys=label_top_keys,
                 highlight_color=[40, 220, 60],
+                tube_radius=0.002,
+                highlight_tube_radius=0.0025,
             ),
             right_grasps=_candidate_preview_grasps(
                 candidates=model_preview_candidates,
                 T_obj_world=T_obj_world,
                 cfg=cfg,
-                color=[255, 170, 30],
+                color=[255, 170, 30, 70],
                 highlight_keys=model_top_keys,
                 highlight_color=[60, 130, 255],
+                tube_radius=0.002,
+                highlight_tube_radius=0.0025,
             ),
-            left_label=left_label,
-            right_label=right_label,
-        )
-        suppress_individual_preview = True
-    elif not args.skip_preview and len(candidates) > 1:
+                left_label=left_label,
+                right_label=right_label,
+            )
+            suppress_individual_preview = True
+            comparison_preview_shown = True
+        except ValueError as exc:
+            print(
+                f"Warning: --compare_labels_preview skipped because labels could not be loaded: {exc}",
+                file=sys.stderr,
+            )
+
+    if not args.skip_preview and not comparison_preview_shown and len(candidates) > 1:
         preview_color = [60, 130, 255] if args.source in {"pred_cgn", "pred_ptv3", "model_h5"} else [40, 220, 60]
         _preview_candidate_set(
             candidates=candidates,
@@ -1119,6 +1146,12 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--view_npz", type=str, default=None, help="Path to per-view .npz")
     p.add_argument("--data_dir", type=str, default="data/out", help="Generated views root")
     p.add_argument(
+        "--label_conf_thresh",
+        type=float,
+        default=0.5,
+        help="Minimum generated-label confidence for labels/GT comparison modes",
+    )
+    p.add_argument(
         "--manifest", type=str, default="data/acronym/manifest.json", help="ACRONYM manifest JSON"
     )
     p.add_argument("--acronym_root", type=str, default="data/acronym", help="ACRONYM root dir")
@@ -1171,6 +1204,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Torch device for pred_* modes",
     )
     p.add_argument(
+        "--eval_seed",
+        type=int,
+        default=0,
+        help="Random seed for deterministic checkpoint inference in pred_* modes",
+    )
+    p.add_argument(
         "--static_object",
         action="store_true",
         help="Pin the target object; default is free (physics) with a free joint",
@@ -1201,7 +1240,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--preview_all_limit",
         type=int,
-        default=250,
+        default=40,
         help=(
             "Maximum orange background candidates per side for --preview_all_grasps; "
             "use 0 to draw every valid candidate."

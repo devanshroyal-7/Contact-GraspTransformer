@@ -31,13 +31,14 @@ def _hand_to_marker_pose(T_hand: np.ndarray) -> np.ndarray:
 
 
 def create_gripper_marker(
-    color: list | None = None, tube_radius: float = 0.001, sections: int = 6
+    color: list | None = None, tube_radius: float = 0.002, sections: int = 6
 ) -> trimesh.Trimesh:
     """Same as ``acronym_tools.create_gripper_marker`` (NVlabs/acronym, MIT)."""
     if color is None:
         color = [0, 0, 255]
+    radius = max(float(tube_radius), 1.0e-4)
     cfl = trimesh.creation.cylinder(
-        radius=0.002,
+        radius=radius,
         sections=sections,
         segment=[
             [4.10000000e-02, -7.27595772e-12, 6.59999996e-02],
@@ -45,7 +46,7 @@ def create_gripper_marker(
         ],
     )
     cfr = trimesh.creation.cylinder(
-        radius=0.002,
+        radius=radius,
         sections=sections,
         segment=[
             [-4.100000e-02, -7.27595772e-12, 6.59999996e-02],
@@ -53,10 +54,10 @@ def create_gripper_marker(
         ],
     )
     cb1 = trimesh.creation.cylinder(
-        radius=0.002, sections=sections, segment=[[0, 0, 0], [0, 0, 6.59999996e-02]]
+        radius=radius, sections=sections, segment=[[0, 0, 0], [0, 0, 6.59999996e-02]]
     )
     cb2 = trimesh.creation.cylinder(
-        radius=0.002,
+        radius=radius,
         sections=sections,
         segment=[[-4.100000e-02, 0, 6.59999996e-02], [4.100000e-02, 0, 6.59999996e-02]],
     )
@@ -161,7 +162,11 @@ def show_grasp_set_preview(
         T_hand = np.asarray(grasp["executed_hand_pose_world"], dtype=np.float64).reshape(4, 4)
         T_marker = _hand_to_marker_pose(T_hand)
         color = grasp.get("color", [40, 220, 60])
-        g = create_gripper_marker(color=color)
+        g = create_gripper_marker(
+            color=color,
+            tube_radius=float(grasp.get("tube_radius", 0.002)),
+            sections=int(grasp.get("sections", 6)),
+        )
         g.apply_transform(T_marker)
         name = str(grasp.get("name", f"grasp_{i}"))
         scene.add_geometry(g, geom_name=name)
@@ -210,7 +215,11 @@ def show_grasp_comparison_preview(
             T_hand = np.asarray(grasp["executed_hand_pose_world"], dtype=np.float64).reshape(4, 4)
             T_marker = _hand_to_marker_pose(T_shift @ T_hand)
             color = grasp.get("color", default_color)
-            g = create_gripper_marker(color=color)
+            g = create_gripper_marker(
+                color=color,
+                tube_radius=float(grasp.get("tube_radius", 0.002)),
+                sections=int(grasp.get("sections", 6)),
+            )
             g.apply_transform(T_marker)
             name = str(grasp.get("name", f"{side_name}_grasp_{i}"))
             scene.add_geometry(g, geom_name=name)
