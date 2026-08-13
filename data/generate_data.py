@@ -28,20 +28,53 @@ Output layout (one file per view):
 
 from __future__ import annotations
 
-import os
-import json
 import argparse
-import numpy as np
+import json
+import os
+from dataclasses import dataclass
+from typing import Any, Mapping
+
 import h5py
+import numpy as np
 import trimesh
 import trimesh.transformations as tra
 from scipy.spatial import KDTree
 
-os.environ["PYOPENGL_PLATFORM"] = "egl"
-import pyrender
+# Set by configure_pyopengl() before any rendering (not at import time).
+pyrender = None  # type: ignore[assignment]
 
 REALSENSE = dict(fx=616.365, fy=616.203, cx=310.259, cy=236.600,
                  width=640, height=480, znear=0.04, zfar=20.0)
+
+
+@dataclass(frozen=True)
+class RenderViewContext:
+    """Scene / camera / renderer bundle for one labelled view."""
+
+    scene: Any
+    cam_node: Any
+    renderer: Any
+    cam_pose_gl: np.ndarray
+    intr: Mapping[str, float]
+
+
+@dataclass(frozen=True)
+class GraspLabelInputs:
+    """Grasp + mesh inputs used when assigning per-point labels."""
+
+    grasp_local: np.ndarray
+    success: np.ndarray
+    grasp_widths: np.ndarray
+    obj_pose: np.ndarray
+    mesh_verts: np.ndarray
+
+
+def configure_pyopengl(platform: str = "egl") -> None:
+    """Set the OpenGL backend and import pyrender. Call before rendering."""
+    global pyrender
+    os.environ["PYOPENGL_PLATFORM"] = platform
+    import pyrender as _pyrender
+    pyrender = _pyrender
 
 
 # ─────────────────────────────── camera poses ─────────────────────────────────
@@ -79,8 +112,12 @@ def depth_to_pointcloud(depth: np.ndarray,
     return np.stack([x, y, z], axis=-1).astype(np.float32)
 
 
-def regularize_pc(pc: np.ndarray, n: int) -> np.ndarray:
-    """Sub- or over-sample *pc* to exactly *n* rows."""
+def sample_points_or_pad(pc: np.ndarray, n: int) -> np.ndarray:
+    """Sub-/over-sample *pc* to exactly *n* rows; empty input → zero pad.
+
+    Distinct from ``inference.sample_points``, which rejects empty clouds.
+    Data generation needs a fixed-size tensor even when a depth view is empty.
+    """
     m = len(pc)
     if m == 0:
         return np.zeros((n, 3), dtype=np.float32)
@@ -112,7 +149,7 @@ def world_to_cam_matrix(cam_pose_gl: np.ndarray) -> np.ndarray:
 # ──────────────────────────── scene construction ──────────────────────────────
 
 def load_and_prepare_mesh(mesh_path: str, scale: float):
-    """Load mesh, scale, centre.  Returns (trimesh, mesh_mean, obj_pose)."""
+    """Load mesh, scale, centre.  Returns (mesh, mesh_mean)."""
     mesh = trimesh.load(mesh_path, force="mesh")
     mesh.apply_scale(scale)
     mesh_mean = mesh.vertices.mean(axis=0)
@@ -123,6 +160,11 @@ def load_and_prepare_mesh(mesh_path: str, scale: float):
 def build_scene(mesh: trimesh.Trimesh, intr: dict,
                 table_dims=(1.0, 1.2, 0.6)):
     """Place the (already centred) mesh on a table, return scene objects."""
+    if pyrender is None:
+        raise RuntimeError(
+            "pyrender is not configured; call configure_pyopengl() first "
+            "(done automatically by main())."
+        )
     scene = pyrender.Scene()
 
     table = trimesh.creation.box(table_dims)
@@ -295,16 +337,31 @@ def _roi_crop(pc: np.ndarray, object_mask: np.ndarray,
     return np.all((pc >= lo) & (pc <= hi), axis=1)
 
 
-def process_view(scene, cam_node, renderer, cam_pose_gl, intr,
-                 grasp_local, success, grasp_widths, obj_pose, mesh_verts,
-                 n_points, table_surface_z: float = 0.3):
+def render_and_label_view(
+    view: RenderViewContext,
+    grasps: GraspLabelInputs,
+    n_points: int,
+    table_surface_z: float = 0.3,
+) -> dict:
     """Render one view and compute per-point grasp labels.
 
-    *mesh_verts* are the centred-mesh vertices (N_v, 3), used to project
-    each grasp TCP onto the nearest surface vertex before label assignment.
+    ``grasps.mesh_verts`` are the centred-mesh vertices (N_v, 3), used to
+    project each grasp TCP onto the nearest surface vertex before label
+    assignment.
 
     Returns dict ready for np.savez_compressed.
     """
+    scene = view.scene
+    cam_node = view.cam_node
+    renderer = view.renderer
+    cam_pose_gl = view.cam_pose_gl
+    intr = view.intr
+    grasp_local = grasps.grasp_local
+    success = grasps.success
+    grasp_widths = grasps.grasp_widths
+    obj_pose = grasps.obj_pose
+    mesh_verts = grasps.mesh_verts
+
     scene.set_pose(cam_node, cam_pose_gl)
     _, depth = renderer.render(scene)
 
@@ -325,22 +382,18 @@ def process_view(scene, cam_node, renderer, cam_pose_gl, intr,
     pc_world = (c2w[:3, :3] @ pc_raw.T + c2w[:3, 3:4]).T
     object_mask_raw = pc_world[:, 2] > table_surface_z + 0.004
 
-    # ROI crop: local region around object with table context
     roi_mask = _roi_crop(pc_raw, object_mask_raw)
     pc_roi = pc_raw[roi_mask]
-    object_mask_roi = object_mask_raw[roi_mask]
 
-    pc = regularize_pc(pc_roi, n_points)
+    pc = sample_points_or_pad(pc_roi, n_points)
 
-    # recompute object_mask for the subsampled cloud
+    # Labels must use object_mask on the *subsampled* cloud, not the raw ROI.
     pc_world_sub = (c2w[:3, :3] @ pc.T + c2w[:3, 3:4]).T
     object_mask = pc_world_sub[:, 2] > table_surface_z + 0.004
 
-    # mean-centre the point cloud
     pc_mean = pc.mean(axis=0, keepdims=True)
     pc_centred = pc - pc_mean
 
-    # transform grasps into the same centred camera frame
     grasp_cam = grasps_to_camera_frame(grasp_local, obj_pose, w2c)
     grasp_cam[:, :3, 3] -= pc_mean.squeeze()
 
@@ -410,10 +463,24 @@ def generate_object(acronym_root: str, entry: dict,
     for i, cam_gl in enumerate(cam_poses):
         cam_gl[2, 3] += table_dims[2]            # shift camera above table
 
-        sample = process_view(scene, cam_node, renderer, cam_gl, intr,
-                              grasp_local, success, grasp_widths,
-                              obj_pose, mesh_verts,
-                              n_points, table_surface_z=table_z)
+        sample = render_and_label_view(
+            RenderViewContext(
+                scene=scene,
+                cam_node=cam_node,
+                renderer=renderer,
+                cam_pose_gl=cam_gl,
+                intr=intr,
+            ),
+            GraspLabelInputs(
+                grasp_local=grasp_local,
+                success=success,
+                grasp_widths=grasp_widths,
+                obj_pose=obj_pose,
+                mesh_verts=mesh_verts,
+            ),
+            n_points,
+            table_surface_z=table_z,
+        )
         np.savez_compressed(os.path.join(out_dir, f"{i:03d}.npz"), **sample)
         total_pos += int(sample["confidence"].sum())
 
@@ -439,7 +506,13 @@ def main():
                         help="Which manifest splits to render")
     parser.add_argument("--n_views", type=int, default=360)
     parser.add_argument("--n_points", type=int, default=4096)
+    parser.add_argument(
+        "--pyopengl-platform",
+        default="egl",
+        help="Value for PYOPENGL_PLATFORM before importing pyrender (default: egl).",
+    )
     args = parser.parse_args()
+    configure_pyopengl(args.pyopengl_platform)
 
     with open(os.path.join(args.acronym_root, "manifest.json")) as f:
         manifest = json.load(f)

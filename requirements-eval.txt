@@ -1,0 +1,6 @@
+# MuJoCo grasp validation (python -m eval.visualize_grasp).
+# Also install requirements-data.txt (h5py, trimesh).
+# Install with: pip install -r requirements.txt -r requirements-data.txt -r requirements-eval.txt
+mujoco>=3.3
+obj2mjcf>=0.1
+robot_descriptions>=1.0
