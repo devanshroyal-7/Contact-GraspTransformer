@@ -1,5 +1,7 @@
 # Contact-GraspNet With Point Transformer V3
 
+Project page: [devanshroyal-7.github.io/Contact-Grasp-Transformer](https://devanshroyal-7.github.io/Contact-Grasp-Transformer/)
+
 This project trains and evaluates a point-cloud grasp detection model for
 6-DoF robotic manipulation. It adapts the Contact-GraspNet prediction heads to
 two interchangeable backbones:
@@ -249,6 +251,7 @@ the input came from the generated ACRONYM-style dataset.
 
 ## References
 
+- [Project page](https://devanshroyal-7.github.io/Contact-Grasp-Transformer/)
 - [Contact-GraspNet](https://arxiv.org/abs/2103.14127) (Sundermeyer et al.)
 - [Point Transformer V3](https://arxiv.org/abs/2312.10035) (Wu et al.)
 - [`model.md`](./model.md): Local architecture notes and code references.
