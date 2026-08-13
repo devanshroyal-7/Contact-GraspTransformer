@@ -3,11 +3,14 @@ from __future__ import annotations
 import glob
 import json
 import os
+from dataclasses import dataclass
 from typing import Iterable, Optional
 
 import numpy as np
 import torch
 from torch.utils.data import Dataset
+
+from models.types import SampleBatch
 
 
 def random_rotation_matrix() -> np.ndarray:
@@ -48,6 +51,48 @@ def resolve_train_cap(budget_path: str,
     return int(budget["presets"][name]["train_objects_per_category"])
 
 
+@dataclass(frozen=True)
+class DatasetConfig:
+    """Paths and budget policy resolved once; passed into ``CGNDataset``."""
+
+    data_dir: str
+    manifest_path: str
+    budget_path: str
+    num_points: int = 4096
+    val_fraction: float = 0.2
+    seed: int = 42
+    train_objects_per_category: Optional[int] = None
+    budget_preset: Optional[str] = None
+    categories: Optional[tuple[str, ...]] = None
+
+    @classmethod
+    def from_paths(
+        cls,
+        data_dir: str,
+        manifest_path: str,
+        budget_path: str,
+        *,
+        num_points: int = 4096,
+        val_fraction: float = 0.2,
+        seed: int = 42,
+        train_objects_per_category: Optional[int] = None,
+        budget_preset: Optional[str] = None,
+        categories: Optional[Iterable[str]] = None,
+    ) -> "DatasetConfig":
+        cats = tuple(categories) if categories is not None else None
+        return cls(
+            data_dir=data_dir,
+            manifest_path=manifest_path,
+            budget_path=budget_path,
+            num_points=num_points,
+            val_fraction=val_fraction,
+            seed=seed,
+            train_objects_per_category=train_objects_per_category,
+            budget_preset=budget_preset,
+            categories=cats,
+        )
+
+
 class CGNDataset(Dataset):
     """Point-cloud + grasp-label dataset driven by ``manifest.json``.
 
@@ -67,39 +112,37 @@ class CGNDataset(Dataset):
 
     LABEL_KEYS = ("confidence", "approach_dirs", "base_dirs", "widths")
 
-    def __init__(self,
-                 data_dir: str,
-                 manifest_path: str,
-                 budget_path: str,
-                 num_points: int = 4096,
-                 split: str = "train",
-                 val_fraction: float = 0.2,
-                 augment: Optional[bool] = None,
-                 seed: int = 42,
-                 train_objects_per_category: Optional[int] = None,
-                 budget_preset: Optional[str] = None,
-                 categories: Optional[Iterable[str]] = None):
+    def __init__(
+        self,
+        config: DatasetConfig,
+        *,
+        split: str = "train",
+        augment: Optional[bool] = None,
+    ):
         if split not in ("train", "val", "test"):
             raise ValueError(f"split must be train/val/test, got {split!r}")
 
-        self.num_points = num_points
+        self.config = config
+        self.num_points = config.num_points
         self.split = split
         self.augment = augment if augment is not None else (split == "train")
 
-        with open(manifest_path) as f:
+        with open(config.manifest_path) as f:
             manifest: list[dict] = json.load(f)
 
-        _, cfg_cats = _load_budget(budget_path)
-        cat_filter = set(categories) if categories is not None else (
+        _, cfg_cats = _load_budget(config.budget_path)
+        cat_filter = set(config.categories) if config.categories is not None else (
             set(cfg_cats) if cfg_cats else None
         )
 
         if split == "test":
             objs = [m for m in manifest if m.get("split") == "test"]
         else:
-            k = resolve_train_cap(budget_path,
-                                  override=train_objects_per_category,
-                                  preset=budget_preset)
+            k = resolve_train_cap(
+                config.budget_path,
+                override=config.train_objects_per_category,
+                preset=config.budget_preset,
+            )
             self.train_cap = k
             objs = [m for m in manifest
                     if m.get("split") == "train" and int(m.get("rank", 0)) <= k]
@@ -112,16 +155,19 @@ class CGNDataset(Dataset):
         for m in objs:
             mesh_hash = m.get("mesh_hash") or os.path.splitext(
                 os.path.basename(m["mesh_path"]))[0]
-            pattern = os.path.join(data_dir, disk_split, m["category"],
+            pattern = os.path.join(config.data_dir, disk_split, m["category"],
                                    mesh_hash, "*.npz")
             all_files.extend(sorted(glob.glob(pattern)))
 
-        # Fallback: support the legacy flat layout (<data_dir>/<category>/NNN.npz)
-        # so old generations still load when split == "train".
-        if not all_files and split != "test":
-            all_files = sorted(
-                glob.glob(os.path.join(data_dir, "*.npz"))
-                + glob.glob(os.path.join(data_dir, "*", "*.npz"))
+        if not all_files:
+            expected = os.path.join(
+                config.data_dir, "<split>", "<category>", "<mesh_hash>", "*.npz"
+            )
+            raise FileNotFoundError(
+                f"No .npz samples found for split={split!r} under "
+                f"{config.data_dir!r}. Expected nested layout: {expected}. "
+                f"Regenerate with data/generate_data.py (legacy flat "
+                f"<data_dir>/<category>/NNN.npz is no longer supported)."
             )
 
         self.objects = objs
@@ -131,18 +177,19 @@ class CGNDataset(Dataset):
             return
 
         # View-level train/val split within the selected training meshes.
-        rng = np.random.RandomState(seed)
+        rng = np.random.RandomState(config.seed)
         indices = rng.permutation(len(all_files))
-        n_val = max(1, int(len(all_files) * val_fraction)) if all_files else 0
+        n_val = max(1, int(len(all_files) * config.val_fraction))
         if split == "val":
             self.files = [all_files[i] for i in indices[:n_val]]
         else:
+            # split == "train" (test returned earlier)
             self.files = [all_files[i] for i in indices[n_val:]]
 
     def __len__(self) -> int:
         return len(self.files)
 
-    def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
+    def __getitem__(self, idx: int) -> SampleBatch:
         data = np.load(self.files[idx])
         points = data["points"]
         labels = {k: data[k] for k in self.LABEL_KEYS}
@@ -160,7 +207,10 @@ class CGNDataset(Dataset):
             labels["base_dirs"] = labels["base_dirs"] @ R.T
             points = points + np.random.randn(*points.shape).astype(np.float32) * 0.001
 
-        out = {"points": torch.from_numpy(points).float()}
-        for k, v in labels.items():
-            out[k] = torch.from_numpy(v).float()
-        return out
+        return SampleBatch(
+            points=torch.from_numpy(points).float(),
+            confidence=torch.from_numpy(labels["confidence"]).float(),
+            approach_dirs=torch.from_numpy(labels["approach_dirs"]).float(),
+            base_dirs=torch.from_numpy(labels["base_dirs"]).float(),
+            widths=torch.from_numpy(labels["widths"]).float(),
+        )

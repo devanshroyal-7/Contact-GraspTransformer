@@ -1,30 +1,65 @@
 """Visualize .npz files produced by ``data/generate_data.py``.
 
-Each .npz contains: depth, points, confidence, approach_dirs, base_dirs,
-widths, camera_pose.
+Dataset-artifact viewer (depth / point cloud / grasp labels / ACRONYM GT).
+Lives under ``viz/`` with the other visualization CLIs; ``data/`` owns
+generation and loading only.
 
 Usage:
-    python data/visualizer.py data/out/Mug/000.npz                 # depth + point cloud
-    python data/visualizer.py data/out/Mug/000.npz --mode depth    # depth only
-    python data/visualizer.py data/out/Mug/000.npz --mode pc       # point cloud only
-    python data/visualizer.py data/out/Mug/000.npz --mode grasps   # pc coloured by confidence
-    python data/visualizer.py data/out/Mug/000.npz --mode poses    # 3D gripper poses on pc
-    python data/visualizer.py data/out/Mug/000.npz --mode poses --save out.png  # save to file
-    python data/visualizer.py --mode gt Mug                        # all ACRONYM grasps on mesh
-    python data/visualizer.py --mode gt Mug --max_grasps 50 --save gt.png
-    python data/visualizer.py data/out/Mug/ --mode depth --grid    # depth grid of all views
+    python viz/dataset_visualizer.py data/out/train/Mug/<hash>/000.npz
+    python viz/dataset_visualizer.py data/out/train/Mug/<hash>/000.npz --mode grasps
+    python viz/dataset_visualizer.py Mug --mode gt --max_grasps 50
+    python viz/dataset_visualizer.py Mug --mode gt --debug
 """
 
 from __future__ import annotations
 
-import os
-
-os.environ.setdefault("DISPLAY", ":0")
-os.environ.setdefault("XDG_SESSION_TYPE", "x11")
-
 import glob
 import argparse
+import os
+import sys
+from pathlib import Path
+
 import numpy as np
+
+# Script-mode bootstrap only (`python viz/dataset_visualizer.py`).
+if __package__ is None:  # pragma: no cover
+    _REPO_ROOT = Path(__file__).resolve().parent.parent
+    if str(_REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(_REPO_ROOT))
+
+from models.cgn_heads import PANDA_FINGER_BASE, PANDA_FINGER_TIP
+from models.types import GraspSampleNP
+
+
+def _open3d_display_unavailable(exc: BaseException) -> bool:
+    """True when Open3D failed due to missing deps or a headless/display issue."""
+    if isinstance(exc, (ImportError, OSError)):
+        return True
+    if isinstance(exc, RuntimeError):
+        msg = str(exc).lower()
+        needles = (
+            "glfw",
+            "display",
+            "x11",
+            "wayland",
+            "egl",
+            "headless",
+            "failed to create",
+            "cannot connect",
+            "no protocol specified",
+        )
+        return any(tok in msg for tok in needles)
+    return False
+
+
+def configure_display() -> None:
+    """Set DISPLAY/XDG defaults for interactive Open3D/GLFW on Linux.
+
+    Call from CLI ``main()`` (or other interactive entry points) only — do not
+    run at import time so library importers are not forced onto ``:0`` / x11.
+    """
+    os.environ.setdefault("DISPLAY", ":0")
+    os.environ.setdefault("XDG_SESSION_TYPE", "x11")
 
 
 # ──────────────────────────────── depth ───────────────────────────────────────
@@ -63,7 +98,10 @@ def show_pc(pc: np.ndarray, title: str = "Point Cloud",
         pcd.colors = o3d.utility.Vector3dVector(plt.cm.viridis(z_norm)[:, :3])
         o3d.visualization.draw_geometries([pcd], window_name=title,
                                            width=960, height=720)
-    except Exception:
+    except Exception as e:
+        if not _open3d_display_unavailable(e):
+            raise
+        print(f"Open3D point-cloud view failed ({e}); falling back to matplotlib")
         _pc_matplotlib(pc, title=title, max_pts=max_pts)
 
 
@@ -96,7 +134,7 @@ def _pc_matplotlib(pc, title="Point Cloud", max_pts=6000,
 
 # ────────────────────────── grasp visualisation ───────────────────────────────
 
-def show_grasps(data: dict, title: str = "Grasps", max_pts: int = 6000):
+def show_grasps(data: GraspSampleNP, title: str = "Grasps", max_pts: int = 6000):
     """Point cloud coloured by grasp confidence (blue=0, red=1)."""
     import matplotlib.pyplot as plt
     from matplotlib.colors import LinearSegmentedColormap
@@ -116,21 +154,22 @@ def show_grasps(data: dict, title: str = "Grasps", max_pts: int = 6000):
         o3d.visualization.draw_geometries(
             [pcd], window_name=f"{title}  ({n_pos} positive pts)",
             width=960, height=720)
-    except Exception:
+    except Exception as e:
+        if not _open3d_display_unavailable(e):
+            raise
+        print(f"Open3D grasp view failed ({e}); falling back to matplotlib")
         _pc_matplotlib(pc, title=f"{title}  ({n_pos} positive pts)",
                        max_pts=max_pts, colors=conf, cmap=cmap)
 
 
 # ──────────────────────── 3-D gripper pose drawing ────────────────────────
 
-PANDA_FINGER_BASE = 0.0584    # wrist → finger attach (m)
-PANDA_FINGER_TIP  = 0.1053   # wrist → fingertip (m)
-
 def _gripper_lines(wrist, approach, binormal, width=0.08):
     """Return (6×3 points, 6×2 line-indices) for one Panda gripper.
 
     ACRONYM places the gripper **wrist** at *wrist*.  Fingers extend
     forward along *approach* and close along *binormal*.
+    Finger length constants come from ``models.cgn_heads``.
     """
     half_w = width / 2
     fb_l = wrist + PANDA_FINGER_BASE * approach + half_w * binormal
@@ -146,7 +185,7 @@ def _gripper_lines(wrist, approach, binormal, width=0.08):
     return pts, lines
 
 
-def _deduplicate_grasps(data, angle_thresh_deg=5.0):
+def _deduplicate_grasps(data: GraspSampleNP, angle_thresh_deg=5.0):
     """Collapse nearby positive-grasp points that share the same direction."""
     conf = data["confidence"]
     pos = np.where(conf > 0.5)[0]
@@ -171,7 +210,7 @@ def _deduplicate_grasps(data, angle_thresh_deg=5.0):
     return pts[keep], app[keep], base[keep], widths[keep]
 
 
-def show_poses(data: dict, title: str = "Grasp Poses", max_bg: int = 8000,
+def show_poses(data: GraspSampleNP, title: str = "Grasp Poses", max_bg: int = 8000,
                save_path: str | None = None,
                max_grasps: int | None = None):
     """Draw 3-D parallel-jaw grippers on the point cloud (Open3D or mpl)."""
@@ -199,7 +238,10 @@ def show_poses(data: dict, title: str = "Grasp Poses", max_bg: int = 8000,
         import open3d as o3d
         _show_poses_o3d(data, centres, approaches, binormals, widths,
                         grasp_colors, title, max_bg)
-    except Exception:
+    except Exception as e:
+        if not _open3d_display_unavailable(e):
+            raise
+        print(f"Open3D pose view failed ({e}); falling back to matplotlib")
         _show_poses_mpl(data, centres, approaches, binormals, widths,
                         grasp_colors, title, max_bg)
 
@@ -307,11 +349,42 @@ def _load_gt(category: str, acronym_root: str = "data/acronym"):
     return surface_pts, succ_tf, entry
 
 
+def _resolve_acronym_root(cli_path: str) -> str:
+    """Use CLI path if it has manifest.json; else try repo ``data/acronym``."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    repo_root = os.path.dirname(here)
+    candidates = [
+        cli_path,
+        os.path.join(repo_root, "data", "acronym"),
+        os.path.join(here, "acronym"),
+    ]
+    for c in candidates:
+        if os.path.isfile(os.path.join(c, "manifest.json")):
+            if os.path.normpath(os.path.abspath(c)) != os.path.normpath(
+                os.path.abspath(cli_path)
+            ):
+                print(f"  Using acronym_root: {c}", file=sys.stderr)
+            return c
+    return cli_path
+
+
 def show_gt(category: str, acronym_root: str = "data/acronym",
-            max_grasps: int = 100, save_path: str | None = None):
+            max_grasps: int = 100, save_path: str | None = None,
+            debug: bool = False):
     """Visualize all ground-truth ACRONYM grasps on the object mesh."""
     surface_pts, succ_tf, entry = _load_gt(category, acronym_root)
     n_total = len(succ_tf)
+
+    if debug:
+        mesh_path = os.path.join(acronym_root, entry["mesh_path"])
+        h5_path = os.path.join(acronym_root, "grasps", entry["grasp_file"])
+        print("[visualizer debug]")
+        print(f"  acronym_root   : {os.path.abspath(acronym_root)}")
+        print(f"  mesh_path      : {mesh_path} (exists={os.path.isfile(mesh_path)})")
+        print(f"  h5_path        : {h5_path} (exists={os.path.isfile(h5_path)})")
+        print(f"  manifest entry : {entry}")
+        print(f"  surface_pts    : {surface_pts.shape}")
+        print(f"  successful TF  : {succ_tf.shape}")
 
     if n_total > max_grasps:
         idx = np.random.default_rng(0).choice(n_total, max_grasps, replace=False)
@@ -337,7 +410,10 @@ def show_gt(category: str, acronym_root: str = "data/acronym",
         import open3d as o3d
         _show_gt_o3d(surface_pts, centres, approaches, binormals,
                      colors, title)
-    except Exception:
+    except Exception as e:
+        if not _open3d_display_unavailable(e):
+            raise
+        print(f"Open3D GT grasp view failed ({e}); falling back to matplotlib")
         _show_gt_mpl(surface_pts, centres, approaches, binormals,
                      colors, title)
 
@@ -402,22 +478,52 @@ def _show_gt_mpl(surface_pts, centres, approaches, binormals,
 
 # ─────────────────────────── combined views ───────────────────────────────────
 
+def _as_grasp_sample(data: dict) -> GraspSampleNP:
+    """Narrow a loaded NPZ mapping into ``GraspSampleNP`` (required keys)."""
+    required = ("points", "confidence", "approach_dirs", "base_dirs", "widths")
+    missing = [k for k in required if k not in data]
+    if missing:
+        raise KeyError(
+            f"NPZ missing GraspSampleNP keys: {', '.join(missing)}"
+        )
+    return GraspSampleNP(
+        points=np.asarray(data["points"]),
+        confidence=np.asarray(data["confidence"]),
+        approach_dirs=np.asarray(data["approach_dirs"]),
+        base_dirs=np.asarray(data["base_dirs"]),
+        widths=np.asarray(data["widths"]),
+    )
+
+
 def show_single(path: str, mode: str = "both", save: str | None = None,
                 max_grasps: int | None = None):
-    data = dict(np.load(path))
+    loaded = dict(np.load(path))
+    # Re-bind optional NPZ fields so key-flow analysis sees local writes.
+    depth = loaded.get("depth")
+    points = loaded.get("points")
     name = os.path.basename(path)
 
-    if mode in ("depth", "both") and "depth" in data:
-        show_depth(data["depth"], title=f"{name} – depth")
+    if mode in ("depth", "both") and depth is not None:
+        show_depth(depth, title=f"{name} – depth")
 
-    if mode in ("pc", "both") and "points" in data:
-        show_pc(data["points"], title=f"{name} – point cloud")
+    if mode in ("pc", "both") and points is not None:
+        show_pc(points, title=f"{name} – point cloud")
 
-    if mode == "grasps" and "confidence" in data:
-        show_grasps(data, title=name)
-
-    if mode == "poses" and "confidence" in data:
-        show_poses(data, title=name, save_path=save, max_grasps=max_grasps)
+    if mode in ("grasps", "poses"):
+        try:
+            grasp = _as_grasp_sample(loaded)
+        except KeyError:
+            grasp = None
+        if grasp is not None:
+            if mode == "grasps":
+                show_grasps(grasp, title=name)
+            else:
+                show_poses(
+                    grasp,
+                    title=name,
+                    save_path=save,
+                    max_grasps=max_grasps,
+                )
 
 
 # ──────────────────────────── folder / grid ───────────────────────────────────
@@ -454,9 +560,17 @@ def show_depth_grid(folder: str, cols: int = 6):
 def show_folder(folder: str, mode: str = "both", grid: bool = False,
                 save: str | None = None,
                 max_grasps: int | None = None):
-    if grid and mode in ("depth", "both"):
-        show_depth_grid(folder)
-        return
+    if grid:
+        if mode == "depth":
+            show_depth_grid(folder)
+            return
+        if mode == "both":
+            show_depth_grid(folder)
+            mode = "pc"  # depth already shown; iterate files for point clouds
+        else:
+            raise ValueError(
+                f"--grid only supports mode 'depth' or 'both', got {mode!r}"
+            )
 
     files = sorted(glob.glob(os.path.join(folder, "*.npz")))
     if not files:
@@ -491,11 +605,20 @@ def main():
     parser.add_argument("--max_grasps", type=int, default=100,
                         help="Max grasps to draw in gt mode, and max unique poses"
                              " to draw in poses mode")
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="In gt mode, print resolved ACRONYM paths and array shapes "
+             "(replaces the old data/viz_test.py helper).",
+    )
     args = parser.parse_args()
+    configure_display()
 
     if args.mode == "gt":
-        show_gt(args.path, acronym_root=args.acronym_root,
-                max_grasps=args.max_grasps, save_path=args.save)
+        root = _resolve_acronym_root(args.acronym_root)
+        show_gt(args.path, acronym_root=root,
+                max_grasps=args.max_grasps, save_path=args.save,
+                debug=args.debug)
     elif os.path.isdir(args.path):
         show_folder(args.path, mode=args.mode, grid=args.grid,
                     save=args.save, max_grasps=args.max_grasps)

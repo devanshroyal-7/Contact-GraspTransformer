@@ -20,6 +20,11 @@ import trimesh
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
+from checkpoint_io import (
+    infer_cpe_mode_from_state_dict,
+    state_dict_and_config_from_checkpoint,
+    torch_load_checkpoint,
+)
 from eval.ik_retarget import (
     ExecPhase,
     RetargetConfig,
@@ -44,33 +49,13 @@ from models.model import ContactGraspNet
 CONTACT_FRAME_SOURCES = {"labels", "pred_cgn", "pred_ptv3"}
 
 
-def _extract_state_dict(ckpt: Any) -> dict[str, Any]:
-    if isinstance(ckpt, dict) and "model_state_dict" in ckpt:
-        state = ckpt["model_state_dict"]
-    elif isinstance(ckpt, dict) and "state_dict" in ckpt:
-        state = ckpt["state_dict"]
-    elif isinstance(ckpt, dict) and "model" in ckpt and isinstance(ckpt["model"], dict):
-        state = ckpt["model"]
-    else:
-        state = ckpt
-    if not isinstance(state, dict):
-        raise ValueError("Checkpoint does not contain a valid state_dict")
-    if state:
-        k0 = next(iter(state.keys()))
-        if isinstance(k0, str) and k0.startswith("module."):
-            state = {k[len("module.") :]: v for k, v in state.items()}
+def _strip_module_prefix(state: dict[str, Any]) -> dict[str, Any]:
+    if not state:
+        return state
+    k0 = next(iter(state.keys()))
+    if isinstance(k0, str) and k0.startswith("module."):
+        return {k[len("module.") :]: v for k, v in state.items()}
     return state
-
-
-def _checkpoint_config_value(ckpt: Any, name: str, default: Any = None) -> Any:
-    if not isinstance(ckpt, dict):
-        return default
-    cfg = ckpt.get("config")
-    if cfg is None:
-        return default
-    if isinstance(cfg, dict):
-        return cfg.get(name, default)
-    return getattr(cfg, name, default)
 
 
 def _load_model_for_backbone(
@@ -83,27 +68,30 @@ def _load_model_for_backbone(
     import torch
 
     dev = torch.device(device)
-    ckpt = torch.load(checkpoint, map_location=dev, weights_only=False)
-    ckpt_backbone = _checkpoint_config_value(ckpt, "backbone")
+    raw = torch_load_checkpoint(checkpoint, map_location=dev)
+    state, ckpt_cfg = state_dict_and_config_from_checkpoint(raw)
+    state = _strip_module_prefix(state)
+
+    ckpt_backbone = ckpt_cfg.get("backbone")
     if ckpt_backbone is not None and str(ckpt_backbone) != str(backbone):
         raise ValueError(
             f"Checkpoint was trained with backbone={ckpt_backbone!r}, "
             f"but --source requested backbone={backbone!r}."
         )
 
-    backbone_kwargs: dict[str, Any] | None = None
+    cpe_mode = None
     if backbone == "ptv3":
-        cpe_mode = (
-            str(_checkpoint_config_value(ckpt, "cpe_mode", "knn"))
-            if ptv3_cpe_mode == "auto"
-            else str(ptv3_cpe_mode)
-        )
-        backbone_kwargs = {"cpe_mode": cpe_mode}
-    else:
-        cpe_mode = None
+        if ptv3_cpe_mode == "auto":
+            cpe_mode = str(
+                ckpt_cfg.get("cpe_mode")
+                or infer_cpe_mode_from_state_dict(state)
+                or "knn"
+            )
+        else:
+            cpe_mode = str(ptv3_cpe_mode)
 
     try:
-        model = ContactGraspNet(backbone_type=backbone, backbone_kwargs=backbone_kwargs).to(dev)
+        model = ContactGraspNet(backbone=backbone, cpe_mode=cpe_mode).to(dev)
     except ImportError as exc:
         if backbone == "ptv3" and cpe_mode == "sparse3d":
             raise ValueError(
@@ -114,7 +102,6 @@ def _load_model_for_backbone(
             ) from exc
         raise
 
-    state = _extract_state_dict(ckpt)
     try:
         model.load_state_dict(state, strict=True)
     except RuntimeError as exc:

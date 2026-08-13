@@ -1,6 +1,13 @@
+from __future__ import annotations
+
+from typing import TypeVar, overload
+
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+from models.types import Predictions
 
 NUM_WIDTH_BINS = 10
 GRIPPER_WIDTH_MAX = 0.08
@@ -10,8 +17,52 @@ PANDA_FINGER_BASE = 0.0584
 PANDA_FINGER_TIP = 0.1053
 PANDA_BASELINE_DIST = 0.0584  # d: distance from baseline to base frame
 
+ArrayT = TypeVar("ArrayT", torch.Tensor, np.ndarray)
 
-def gram_schmidt(z1: torch.Tensor, z2: torch.Tensor):
+
+@overload
+def wrist_from_grasp(
+    contact: torch.Tensor,
+    approach: torch.Tensor,
+    baseline: torch.Tensor,
+    width: torch.Tensor,
+) -> torch.Tensor: ...
+
+
+@overload
+def wrist_from_grasp(
+    contact: np.ndarray,
+    approach: np.ndarray,
+    baseline: np.ndarray,
+    width: np.ndarray,
+) -> np.ndarray: ...
+
+
+def wrist_from_grasp(
+    contact: ArrayT,
+    approach: ArrayT,
+    baseline: ArrayT,
+    width: ArrayT,
+) -> ArrayT:
+    """Wrist / TCP origin from contact-grasp parameters.
+
+    ``wrist = contact + (width / 2) * baseline + d * approach``
+    with ``d = PANDA_BASELINE_DIST``.
+
+    Accepts torch tensors or numpy arrays. Shapes: contact / approach /
+    baseline ``(..., 3)``, width ``(...)``.
+    """
+    half_w = width * 0.5
+    if isinstance(contact, torch.Tensor):
+        half_w = half_w.unsqueeze(-1)
+    else:
+        half_w = half_w[..., None]
+    return contact + half_w * baseline + PANDA_BASELINE_DIST * approach
+
+
+def gram_schmidt(
+    z1: torch.Tensor, z2: torch.Tensor
+) -> tuple[torch.Tensor, torch.Tensor]:
     """Gram-Schmidt orthonormalization (paper Eq. 6).
 
     Returns (b_hat, a_hat) where b_hat = normalise(z1) and a_hat is the
@@ -32,8 +83,12 @@ class CGNHeads(nn.Module):
     * Width: 10 equidistant bins in [0, wmax] with multi-label BCE.
     """
 
-    def __init__(self, in_channels, num_width_bins=NUM_WIDTH_BINS,
-                 gripper_width_max=GRIPPER_WIDTH_MAX):
+    def __init__(
+        self,
+        in_channels: int,
+        num_width_bins: int = NUM_WIDTH_BINS,
+        gripper_width_max: float = GRIPPER_WIDTH_MAX,
+    ):
         super().__init__()
         self.num_width_bins = num_width_bins
         self.gripper_width_max = gripper_width_max
@@ -72,7 +127,7 @@ class CGNHeads(nn.Module):
             nn.Conv1d(hidden, num_width_bins, 1),
         )
 
-    def forward(self, features):
+    def forward(self, features: torch.Tensor) -> Predictions:
         """
         features: (B, C, N) tensor of per-point features from the backbone.
         """
@@ -86,11 +141,11 @@ class CGNHeads(nn.Module):
         best_bin = width_bin_logits.argmax(dim=-1)                    # (B, N)
         widths = self.bin_centres[best_bin]                           # (B, N)
 
-        return {
-            'confidence': torch.sigmoid(conf_logits),
-            'confidence_logits': conf_logits,
-            'approach_dirs': approach_dirs,
-            'base_dirs': base_dirs,
-            'width_bin_logits': width_bin_logits,
-            'widths': widths,
-        }
+        return Predictions(
+            confidence=torch.sigmoid(conf_logits),
+            confidence_logits=conf_logits,
+            approach_dirs=approach_dirs,
+            base_dirs=base_dirs,
+            width_bin_logits=width_bin_logits,
+            widths=widths,
+        )

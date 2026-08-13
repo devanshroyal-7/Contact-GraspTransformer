@@ -1,42 +1,70 @@
 # Environment Setup
 
-## 1) Create Environment
+## 1. Create the conda environment
 
 ```bash
 conda create -n idlsproj python=3.9 -y
 conda activate idlsproj
 ```
 
-## 2) Install PyTorch
+## 2. Install PyTorch (pick your CUDA version)
 
 ```bash
-# CUDA 12.8 example
+# CUDA 12.8 (adjust for your driver — check with `nvidia-smi`)
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
 
-# CPU-only fallback
+# CPU-only (if no GPU)
 # pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
 ```
 
-## 3) Install Project Dependencies
+## 3. Install the rest
+
+Dependencies are split by stack:
+
+| File | Use for |
+|---|---|
+| `requirements.txt` | Core train / infer (numpy, torch, wandb) |
+| `requirements-data.txt` | Data generation / mesh render (h5py, trimesh, pyrender, scipy) |
+| `requirements-viz.txt` | Visualization (open3d, matplotlib) |
+| `requirements-eval.txt` | MuJoCo grasp validation (mujoco, obj2mjcf, robot_descriptions) |
 
 ```bash
-python -m pip install -U pip
+# Train / infer only
 pip install -r requirements.txt
-pip install obj2mjcf robot_descriptions
+
+# + data generation
+pip install -r requirements.txt -r requirements-data.txt
+
+# + visualization
+pip install -r requirements.txt -r requirements-viz.txt
+
+# + MuJoCo evaluation (also needs the data extras)
+pip install -r requirements.txt -r requirements-data.txt -r requirements-eval.txt
+
+# Full local stack
+pip install -r requirements.txt -r requirements-data.txt -r requirements-viz.txt -r requirements-eval.txt
 ```
 
-## 4) Verify
+> **Note:** `pyrender` needs OpenGL. On a headless server set `export PYOPENGL_PLATFORM=egl`
+> before running any rendering scripts. On a desktop with a display this is not needed.
+
+## 4. Verify
 
 ```bash
 python -c "import torch; print('torch', torch.__version__, '| CUDA', torch.cuda.is_available())"
-python -c "import trimesh, open3d, h5py; print('geometry imports OK')"
+# After installing requirements-data.txt / requirements-viz.txt:
+python -c "import pyrender, trimesh, open3d, h5py; print('geometry imports OK')"
+# After installing requirements-eval.txt:
 python -c "import mujoco; print('MuJoCo OK')"
 ```
 
-## Data + Training Quick Commands
+## Quick commands
 
 ```bash
-# Generate data
+# Copy the 15-category ACRONYM subset (meshes are not in git)
+python data/acronym/build_acronym_subset.py --src /path/to/acronym
+
+# Generate depth + point cloud + grasp labels for all objects
 python data/generate_data.py
 
 # Generate only Mug
@@ -49,13 +77,13 @@ python data/generate_data.py --category Mug --n_views 5 --n_points 4096
 # 2997f21fa426e18a6ab1a25d0e8f3590
 
 # Visualize a single rendered view (depth + point cloud)
-python data/visualizer.py data/out/train/Mug/2997f21fa426e18a6ab1a25d0e8f3590/000.npz
+python viz/dataset_visualizer.py data/out/train/Mug/2997f21fa426e18a6ab1a25d0e8f3590/000.npz
 
 # Depth-only grid of all views for one Mug mesh
-python data/visualizer.py data/out/train/Mug/2997f21fa426e18a6ab1a25d0e8f3590/ --mode depth --grid
+python viz/dataset_visualizer.py data/out/train/Mug/2997f21fa426e18a6ab1a25d0e8f3590/ --mode depth --grid
 
 # Point cloud coloured by grasp confidence
-python data/visualizer.py data/out/train/Mug/2997f21fa426e18a6ab1a25d0e8f3590/001.npz --mode grasps
+python viz/dataset_visualizer.py data/out/train/Mug/2997f21fa426e18a6ab1a25d0e8f3590/001.npz --mode grasps
 
 # Train
 python train.py --data_dir data/out --backbone ptv3 --epochs 10
@@ -66,7 +94,7 @@ python train.py --data_dir data/out --backbone ptv3 --epochs 10
 >
 > ```bash
 > env WAYLAND_DISPLAY= XDG_SESSION_TYPE=x11 GDK_BACKEND=x11 DISPLAY=:0 \
-> python data/visualizer.py data/out/train/Mug/2997f21fa426e18a6ab1a25d0e8f3590/000.npz
+> python viz/dataset_visualizer.py data/out/train/Mug/2997f21fa426e18a6ab1a25d0e8f3590/000.npz
 > ```
 
 ## Grasp Visualization + MuJoCo Execution
@@ -102,7 +130,7 @@ python -m eval.visualize_grasp \
 # 3) Evaluate a PointNet++ checkpoint on the same view.
 python -m eval.visualize_grasp \
   --source pred_cgn \
-  --checkpoint models/checkpoints/best_pn2.pt \
+  --checkpoint checkpoints/pn2/<run_folder>/best.pt \
   --view_npz data/out/test/Mug/40f9a6cc6b2c3b3a78060a3a3a55e18f/000.npz \
   --start_delay_s 0 \
   --top_k 5
@@ -110,7 +138,7 @@ python -m eval.visualize_grasp \
 # 4) Evaluate a PTv3 checkpoint on the same view.
 python -m eval.visualize_grasp \
   --source pred_ptv3 \
-  --checkpoint models/checkpoints/best_ptv3.pt \
+  --checkpoint checkpoints/ptv3/<run_folder>/best.pt \
   --view_npz data/out/test/Mug/40f9a6cc6b2c3b3a78060a3a3a55e18f/000.npz \
   --start_delay_s 0 \
   --top_k 5
@@ -118,7 +146,7 @@ python -m eval.visualize_grasp \
 # Optional: show GT labels and model predictions side-by-side in Trimesh.
 python -m eval.visualize_grasp \
   --source pred_cgn \
-  --checkpoint <pointnetpp_checkpoint.pt> \
+  --checkpoint checkpoints/pn2/<run_folder>/best.pt \
   --view_npz data/out/test/Mug/40f9a6cc6b2c3b3a78060a3a3a55e18f/000.npz \
   --start_delay_s 0 \
   --top_k 5 \

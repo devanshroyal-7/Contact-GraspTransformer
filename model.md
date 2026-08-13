@@ -17,22 +17,28 @@ each table so the numbers can be verified directly against the source.
 The wrapper simply dispatches to the chosen backbone and then runs the CGN
 heads on top of the returned per-point features.
 
-```17:33:models/model.py
-    def __init__(self, backbone_type='pn2', backbone_kwargs=None):
+```17:61:models/model.py
+    def __init__(
+        self,
+        backbone: str = "ptv3",
+        *,
+        cpe_mode: str | None = None,
+        in_channels: int | None = None,
+        window_size: int | None = None,
+    ):
         super().__init__()
+        self.backbone_name = backbone
         self.head_in_channels = 64
-        backbone_kwargs = dict(backbone_kwargs or {})
 
-        if backbone_type == 'pn2':
-            self.backbone = SimplePointNet2(
-                out_channels=self.head_in_channels, **backbone_kwargs
-            )
-        elif backbone_type == 'ptv3':
-            self.backbone = PTv3Wrapper(
-                out_channels=self.head_in_channels, **backbone_kwargs
-            )
+        if backbone == "pn2":
+            ...
+            self.backbone = SimplePointNet2(out_channels=self.head_in_channels)
+        elif backbone == "ptv3":
+            ptv3_kwargs = {"out_channels": self.head_in_channels}
+            ...
+            self.backbone = PTv3Wrapper(**ptv3_kwargs)
         else:
-            raise ValueError(f"Unknown backbone: {backbone_type}")
+            raise ValueError(f"Unknown backbone: {backbone}")
 
         self.heads = CGNHeads(in_channels=self.head_in_channels)
 ```
@@ -120,10 +126,10 @@ class SimplePointNet2(nn.Module):
     """
     def __init__(self, out_channels=64):
         super().__init__()
-        self.sa1 = PointNetSetAbstraction(512, 0.1, 32, 3 + 3, [32, 32, 64], False)
-        self.sa2 = PointNetSetAbstraction(128, 0.2, 32, 64 + 3, [64, 64, 128], False)
-        self.sa3 = PointNetSetAbstraction(32, 0.4, 32, 128 + 3, [128, 128, 256], False)
-        self.sa4 = PointNetSetAbstraction(8, 0.8, 32, 256 + 3, [256, 256, 512], False)
+        self.sa1 = PointNetSetAbstraction(512, 0.1, 32, 3 + 3, [32, 32, 64])
+        self.sa2 = PointNetSetAbstraction(128, 0.2, 32, 64 + 3, [64, 64, 128])
+        self.sa3 = PointNetSetAbstraction(32, 0.4, 32, 128 + 3, [128, 128, 256])
+        self.sa4 = PointNetSetAbstraction(8, 0.8, 32, 256 + 3, [256, 256, 512])
         
         self.fp4 = PointNetFeaturePropagation(512 + 256, [256, 256])
         self.fp3 = PointNetFeaturePropagation(256 + 128, [256, 128])
@@ -135,7 +141,7 @@ SA block internals (shared-MLP over grouped neighbours, max-pool over the group)
 
 ```70:102:models/backbone_pn2.py
 class PointNetSetAbstraction(nn.Module):
-    def __init__(self, npoint, radius, nsample, in_channel, mlp, group_all):
+    def __init__(self, npoint, radius, nsample, in_channel, mlp):
         super(PointNetSetAbstraction, self).__init__()
         self.npoint = npoint
         self.radius = radius
@@ -147,17 +153,13 @@ class PointNetSetAbstraction(nn.Module):
             self.mlp_convs.append(nn.Conv2d(last_channel, out_channel, 1))
             self.mlp_bns.append(nn.BatchNorm2d(out_channel))
             last_channel = out_channel
-        self.group_all = group_all
 
     def forward(self, xyz, points):
         xyz = xyz.permute(0, 2, 1)
         if points is not None:
             points = points.permute(0, 2, 1)
 
-        if self.group_all:
-            new_xyz, new_points = xyz, points
-        else:
-            new_xyz, new_points = sample_and_group(self.npoint, self.radius, self.nsample, xyz, points)
+        new_xyz, new_points = sample_and_group(self.npoint, self.radius, self.nsample, xyz, points)
 
         new_points = new_points.permute(0, 3, 2, 1) # [B, C+D, nsample,npoint]
         for i, conv in enumerate(self.mlp_convs):
@@ -385,7 +387,7 @@ participating in softmax:
 
         # xCPE residual: depends on mode. grid_coord & valid are passed so
         # neighborhood CPE variants can see real 3-D neighbors.
-        feat = feat + self.cpe(feat, grid_coord, valid)
+        feat = feat + self.cpe(feat, valid, grid_coord)
 
         pad_len = (W - N % W) % W
         if pad_len:
@@ -517,9 +519,14 @@ class Conv1DCPE(nn.Module):
         self.proj = nn.Linear(channels, channels)
         self.norm = nn.LayerNorm(channels)
 
-    def forward(self, feat: torch.Tensor, grid_coord: torch.Tensor,
-                valid: torch.Tensor) -> torch.Tensor:
-        # feat: (B, N, C). grid_coord/valid unused here.
+    def forward(
+        self,
+        feat: torch.Tensor,
+        valid: torch.Tensor,
+        grid_coord: torch.Tensor,
+    ) -> torch.Tensor:
+        # feat: (B, N, C). valid/grid_coord unused here (signature matches MHA).
+        del valid, grid_coord
         out = self.conv(feat.transpose(1, 2)).transpose(1, 2)
         return self.norm(self.proj(out))
 ```

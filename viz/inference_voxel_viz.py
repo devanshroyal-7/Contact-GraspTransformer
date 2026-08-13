@@ -1,28 +1,36 @@
 """Visualize PTv3 voxels during real ContactGraspNet inference.
 
-This is the inference-time counterpart to ``voxel_viz.py``. It loads a trained
+This is the inference-time counterpart to ``viz.voxel_viz``. It loads a trained
 checkpoint, runs the same preprocessing and forward pass used by
 ``GraspPredictor.predict``, and records the voxel grids produced by each PTv3
 ``VoxelPoolDown`` and ``VoxelUnpoolUp`` layer, plus the final per-point
 features that feed the ContactGraspNet heads.
 
 Example:
-    python inference_voxel_viz.py --ckpt checkpoints/best.pt \
+    python viz/inference_voxel_viz.py --ckpt checkpoints/ptv3/<run_folder>/best.pt \
         --points data/out/train/Mug/2997f21fa426e18a6ab1a25d0e8f3590/000.npz
 """
 
 from __future__ import annotations
 
 import argparse
+import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
 
 import numpy as np
 import torch
 
-from inference import GraspPredictor, load_point_cloud, sample_points
+# Script-mode bootstrap only (`python viz/inference_voxel_viz.py`).
+if __package__ is None:  # pragma: no cover
+    _REPO_ROOT = Path(__file__).resolve().parent.parent
+    if str(_REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(_REPO_ROOT))
+
+from inference import GraspPredictor, load_point_cloud, prepare_model_input
 from models.backbone_ptv3 import PTv3Wrapper
-from voxel_viz import draw_geometries, quantize_like_ptv3, voxels_to_gradient_mesh
+from viz.voxel_viz import draw_geometries, quantize_like_ptv3, voxels_to_gradient_mesh
 
 
 @dataclass
@@ -215,11 +223,14 @@ def capture_inference_voxels(
     """Run one real inference pass and return PTv3 encoder/decoder voxel frames."""
     backbone = _find_ptv3_backbone(predictor)
     device = predictor.device
-    rng = np.random.default_rng(seed)
 
-    sampled = sample_points(points.astype(np.float32), predictor.num_points, rng)
-    centroid = sampled.mean(axis=0, keepdims=True).astype(np.float32)
-    centred = sampled - centroid
+    centroid, centred, xyz = prepare_model_input(
+        points,
+        num_points=predictor.num_points,
+        device=device,
+        seed=seed,
+    )
+    sampled = (centred + centroid).astype(np.float32)
 
     base_grid, base_origin_centred = quantize_like_ptv3(
         centred.astype(np.float64),
@@ -227,9 +238,7 @@ def capture_inference_voxels(
     )
     base_origin = base_origin_centred + centroid.squeeze(0).astype(np.float64)
     unique_base_grid = np.unique(base_grid, axis=0)
-    level_strides = [1]
-    for stride in backbone.pool_strides:
-        level_strides.append(level_strides[-1] * int(stride))
+    level_strides = list(backbone.cumulative_level_strides())
 
     frames: list[VoxelFrame] = [
         VoxelFrame(
@@ -300,18 +309,16 @@ def capture_inference_voxels(
 
         return hook
 
-    cumulative_stride = 1
-    for stage_index, (down_block, stride) in enumerate(
-        zip(backbone.down_blocks, backbone.pool_strides),
-        start=1,
-    ):
-        cumulative_stride *= int(stride)
-        hooks.append(down_block.register_forward_hook(make_hook(stage_index, cumulative_stride)))
-    for skip_index, up_block in enumerate(backbone.up_blocks):
+    for stage_index, cumulative_stride, down_block in backbone.encoder_pool_stages():
+        hooks.append(
+            down_block.register_forward_hook(
+                make_hook(stage_index, cumulative_stride)
+            )
+        )
+    for skip_index, up_block in backbone.decoder_unpool_stages():
         hooks.append(up_block.register_forward_hook(make_up_hook(skip_index)))
 
     try:
-        xyz = torch.from_numpy(centred).unsqueeze(0).to(device)
         with torch.no_grad():
             preds = predictor.model(xyz)
     finally:
@@ -413,7 +420,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Run ContactGraspNet inference and visualize PTv3 voxel grids."
     )
-    parser.add_argument("--ckpt", default="checkpoints/best.pt", help="Trained .pt checkpoint")
+    parser.add_argument("--ckpt", required=True, help="Trained .pt checkpoint")
     parser.add_argument("--points", required=True, help="Input point cloud (.npy/.npz/.ply/.pcd/.xyz)")
     parser.add_argument(
         "--backbone",

@@ -2,13 +2,16 @@
 .cache/
 __pycache__/
 .DS_Store
+.pytest_cache/
 cache/
 data/out/
 data/acronym/grasps/
 data/acronym/meshes/
 wandb/
-reference.py
+checkpoints/
+models/checkpoints/
 out/
-report.tex
-models/checkpoints/*.pt
-
+.desloppify/
+tea_debug.log
+# Open3D may dump RenderOption_<timestamp>.json into the CWD when a viewer closes.
+RenderOption*.json

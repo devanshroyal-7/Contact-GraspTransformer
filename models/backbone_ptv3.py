@@ -2,10 +2,17 @@
 
 Implements the PTv3 mechanisms with pragmatic simplifications so the backbone
 still accepts a dense (B, N, 3) point cloud and returns (B, C, N) per-point
-features.  Key mechanisms:
+features.
+
+Upstream reference (not vendored in this repo): Pointcept Point Transformer V3
+  https://github.com/Pointcept/Pointcept
+  (pointcept/models/point_transformer_v3/)
+
+Key mechanisms:
 
 - Multi-pattern space-filling-curve serialization (Z / Trans-Z / 3-D Hilbert
   and its transposed variant, the latter via Skilling's AxesToTranspose).
+  Readable NumPy reference: ``models.serialization_numpy``.
 - Shuffle Order: per-forward permutation of the ordering list, each block
   uses a fixed ``order_index`` within its stage (matches the Pointcept
   reference semantics).
@@ -19,11 +26,17 @@ features.  Key mechanisms:
   participate in softmax.
 """
 
-from typing import Dict, List, Optional, Tuple
+from __future__ import annotations
+
+import importlib
+import warnings
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+from models.serialization_numpy import SERIALIZATION_PATTERNS
 
 
 # ───────────────────── space-filling curve helpers ───────────────────────────
@@ -38,16 +51,16 @@ def _part1by2(n: torch.Tensor) -> torch.Tensor:
     return n
 
 
-def morton_encode(xyz_int: torch.Tensor) -> torch.Tensor:
+def morton_encode(grid_coord: torch.Tensor) -> torch.Tensor:
     """Z-order / Morton code from integer grid coords (..., 3) -> (...)."""
-    x, y, z = xyz_int[..., 0], xyz_int[..., 1], xyz_int[..., 2]
+    x, y, z = grid_coord[..., 0], grid_coord[..., 1], grid_coord[..., 2]
     return _part1by2(x) | (_part1by2(y) << 1) | (_part1by2(z) << 2)
 
 
 HILBERT_BITS = 10  # 10 bits per axis -> 30-bit Hilbert index, fits in int64.
 
 
-def hilbert_encode_3d(xyz_int: torch.Tensor,
+def hilbert_encode_3d(grid_coord: torch.Tensor,
                       bits: int = HILBERT_BITS) -> torch.Tensor:
     """3-D Hilbert curve index from integer grid coords (..., 3) -> (...).
 
@@ -59,10 +72,13 @@ def hilbert_encode_3d(xyz_int: torch.Tensor,
     ``bits`` controls the per-axis precision: values must satisfy
     ``0 <= coord < 2**bits``.  At ``bits=10`` the index fits in 30 bits.
     """
-    assert xyz_int.shape[-1] == 3, "expected (..., 3) coord tensor"
-    x = (xyz_int[..., 0] & ((1 << bits) - 1)).clone().long()
-    y = (xyz_int[..., 1] & ((1 << bits) - 1)).clone().long()
-    z = (xyz_int[..., 2] & ((1 << bits) - 1)).clone().long()
+    if grid_coord.shape[-1] != 3:
+        raise ValueError(
+            f"expected (..., 3) coord tensor, got shape {tuple(grid_coord.shape)}"
+        )
+    x = (grid_coord[..., 0] & ((1 << bits) - 1)).clone().long()
+    y = (grid_coord[..., 1] & ((1 << bits) - 1)).clone().long()
+    z = (grid_coord[..., 2] & ((1 << bits) - 1)).clone().long()
 
     n = 3
     M = 1 << (bits - 1)
@@ -114,7 +130,7 @@ def hilbert_encode_3d(xyz_int: torch.Tensor,
 
 # ───────────────── multi-pattern serialization ───────────────────────────────
 
-PATTERNS = ("z", "tz", "hilbert", "thilbert")
+PATTERNS = SERIALIZATION_PATTERNS
 NUM_PATTERNS = len(PATTERNS)
 
 
@@ -184,6 +200,20 @@ class DropPath(nn.Module):
 
 # ──────────────────────── CPE variants ───────────────────────────────────────
 
+def _import_spconv() -> Any:
+    """Import spconv while hiding its torch AMP deprecation noise."""
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=r"`torch\.cuda\.amp\.custom_(fwd|bwd)\(args\.\.\.\)` is deprecated\.",
+            category=FutureWarning,
+            module=r"spconv\.pytorch\.functional",
+        )
+        spconv = importlib.import_module("spconv.pytorch")
+
+    return spconv
+
+
 class Conv1DCPE(nn.Module):
     """xCPE via depthwise 1-D conv along the serialized sequence.
 
@@ -198,9 +228,14 @@ class Conv1DCPE(nn.Module):
         self.proj = nn.Linear(channels, channels)
         self.norm = nn.LayerNorm(channels)
 
-    def forward(self, feat: torch.Tensor, grid_coord: torch.Tensor,
-                valid: torch.Tensor) -> torch.Tensor:
-        # feat: (B, N, C). grid_coord/valid unused here.
+    def forward(
+        self,
+        feat: torch.Tensor,
+        valid: torch.Tensor,
+        grid_coord: torch.Tensor,
+    ) -> torch.Tensor:
+        # feat: (B, N, C). valid/grid_coord unused here (signature matches MHA).
+        del valid, grid_coord
         out = self.conv(feat.transpose(1, 2)).transpose(1, 2)
         return self.norm(self.proj(out))
 
@@ -221,9 +256,13 @@ class KNNCPE(nn.Module):
         self.proj = nn.Linear(channels, channels)
         self.norm = nn.LayerNorm(channels)
 
-    def forward(self, feat: torch.Tensor, grid_coord: torch.Tensor,
-                valid: torch.Tensor) -> torch.Tensor:
-        # feat: (B, N, C); grid_coord: (B, N, 3) int; valid: (B, N) bool
+    def forward(
+        self,
+        feat: torch.Tensor,
+        valid: torch.Tensor,
+        grid_coord: torch.Tensor,
+    ) -> torch.Tensor:
+        # feat: (B, N, C); valid: (B, N) bool; grid_coord: (B, N, 3) int
         B, N, C = feat.shape
         gc = grid_coord.float()
 
@@ -232,9 +271,8 @@ class KNNCPE(nn.Module):
         # when they appear as the "source" in a query. Invalid query rows are
         # harmless because their output will be masked downstream.
         dists = torch.cdist(gc, gc, p=2.0)   # (B, N, N)
-        if valid is not None:
-            inv = ~valid                     # (B, N)
-            dists = dists.masked_fill(inv.unsqueeze(1), float('inf'))
+        inv = ~valid                         # (B, N)
+        dists = dists.masked_fill(inv.unsqueeze(1), float('inf'))
 
         k = min(self.k, N)
         _, knn_idx = dists.topk(k, dim=-1, largest=False)  # (B, N, k)
@@ -262,7 +300,7 @@ class SparseCPE(nn.Module):
     def __init__(self, channels: int, indice_key: str):
         super().__init__()
         try:
-            import spconv.pytorch as spconv  # noqa: F401
+            spconv = _import_spconv()
         except ImportError as exc:
             raise ImportError(
                 "cpe_mode='sparse3d' requires `spconv`. "
@@ -270,7 +308,6 @@ class SparseCPE(nn.Module):
                 "cpe_mode to 'knn' / 'conv1d'."
             ) from exc
 
-        import spconv.pytorch as spconv
         self._spconv = spconv
         self.indice_key = indice_key
         self.conv = spconv.SubMConv3d(channels, channels, kernel_size=3,
@@ -278,9 +315,13 @@ class SparseCPE(nn.Module):
         self.proj = nn.Linear(channels, channels)
         self.norm = nn.LayerNorm(channels)
 
-    def forward(self, feat: torch.Tensor, grid_coord: torch.Tensor,
-                valid: torch.Tensor) -> torch.Tensor:
-        # feat: (B, N, C); grid_coord: (B, N, 3) int; valid: (B, N) bool
+    def forward(
+        self,
+        feat: torch.Tensor,
+        valid: torch.Tensor,
+        grid_coord: torch.Tensor,
+    ) -> torch.Tensor:
+        # feat: (B, N, C); valid: (B, N) bool; grid_coord: (B, N, 3) int
         B, N, C = feat.shape
 
         # Flatten valid points to (M, C) with spconv indices (batch, x, y, z).
@@ -371,9 +412,10 @@ class GridWindowAttention(nn.Module):
         B, N, C = feat.shape
         W = self.window_size
 
-        # xCPE residual: depends on mode. grid_coord & valid are passed so
+        # xCPE residual: depends on mode. valid & grid_coord are passed so
         # neighborhood CPE variants can see real 3-D neighbors.
-        feat = feat + self.cpe(feat, grid_coord, valid)
+        # Arg order matches this block: (feat, valid, grid_coord).
+        feat = feat + self.cpe(feat, valid, grid_coord)
 
         pad_len = (W - N % W) % W
         if pad_len:
@@ -502,6 +544,24 @@ def _voxel_pool(
     return new_xyz, new_gc, new_feat, new_valid, inverse, max_M
 
 
+def _apply_masked_bn_act(
+    feat: torch.Tensor,
+    valid: torch.Tensor,
+    bn: nn.Module,
+    act: nn.Module,
+) -> torch.Tensor:
+    """BatchNorm + activation over valid tokens only (skip padded rows)."""
+    flat = feat.reshape(-1, feat.shape[-1])
+    vmask = valid.reshape(-1)
+    if vmask.any():
+        v_flat = flat[vmask]
+        v_flat = bn(v_flat)
+        flat = flat.clone()
+        flat[vmask] = v_flat
+        flat = act(flat)
+    return flat.reshape(feat.shape)
+
+
 class VoxelPoolDown(nn.Module):
     """Voxel-grid pooling via Morton-cluster scatter, with BN+GELU stem.
 
@@ -511,30 +571,27 @@ class VoxelPoolDown(nn.Module):
     (B, M, C) tensor and tracked with a boolean ``valid`` mask.
     """
 
-    def __init__(self, in_c: int, out_c: int, pool_stride: int = 2):
+    def __init__(self, in_c: int, out_c: int, pool_stride: int = 2) -> None:
         super().__init__()
-        assert pool_stride >= 2, "pool_stride >= 2 required"
+        if pool_stride < 2:
+            raise ValueError(f"pool_stride >= 2 required, got {pool_stride}")
         self.pool_shift = (pool_stride - 1).bit_length()  # stride=2 -> 1, 4 -> 2
         self.proj = nn.Linear(in_c, out_c)
         self.bn = nn.BatchNorm1d(out_c, eps=1e-3, momentum=0.01)
         self.act = nn.GELU()
 
-    def forward(self, xyz, grid_coord, feat, valid):
+    def forward(
+        self,
+        xyz: torch.Tensor,
+        grid_coord: torch.Tensor,
+        feat: torch.Tensor,
+        valid: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         feat = self.proj(feat)
         new_xyz, new_gc, new_feat, new_valid, inverse, M = _voxel_pool(
             xyz, grid_coord, feat, valid, self.pool_shift
         )
-        # BN over valid tokens only to avoid contaminating running stats with
-        # zero-padded rows.
-        flat = new_feat.reshape(-1, new_feat.shape[-1])
-        vmask = new_valid.reshape(-1)
-        if vmask.any():
-            v_flat = flat[vmask]
-            v_flat = self.bn(v_flat)
-            flat = flat.clone()
-            flat[vmask] = v_flat
-            flat = self.act(flat)
-        new_feat = flat.reshape(new_feat.shape)
+        new_feat = _apply_masked_bn_act(new_feat, new_valid, self.bn, self.act)
         return new_xyz, new_gc, new_feat, new_valid, inverse
 
 
@@ -564,16 +621,7 @@ class VoxelUnpoolUp(nn.Module):
         gathered = torch.gather(coarse_proj, 1, idx)      # (B, N_fine, out_c)
         skip_proj = self.proj_skip(skip_feat)
         out = gathered + skip_proj
-
-        flat = out.reshape(-1, out.shape[-1])
-        vmask = skip_valid.reshape(-1)
-        if vmask.any():
-            v_flat = flat[vmask]
-            v_flat = self.bn(v_flat)
-            flat = flat.clone()
-            flat[vmask] = v_flat
-            flat = self.act(flat)
-        return flat.reshape(out.shape)
+        return _apply_masked_bn_act(out, skip_valid, self.bn, self.act)
 
 
 # ──────────────────────── full backbone ──────────────────────────────────────
@@ -612,8 +660,18 @@ class PTv3Wrapper(nn.Module):
         knn_k: int = 16,
     ):
         super().__init__()
-        assert len(enc_channels) == len(enc_num_heads) == len(enc_depths)
-        assert len(dec_depths) == len(enc_channels) - 1 == len(pool_strides)
+        if not (len(enc_channels) == len(enc_num_heads) == len(enc_depths)):
+            raise ValueError(
+                "enc_channels, enc_num_heads, and enc_depths must have equal "
+                f"lengths; got {len(enc_channels)}, {len(enc_num_heads)}, "
+                f"{len(enc_depths)}"
+            )
+        if not (len(dec_depths) == len(enc_channels) - 1 == len(pool_strides)):
+            raise ValueError(
+                "Expected len(dec_depths) == len(enc_channels) - 1 == "
+                f"len(pool_strides); got {len(dec_depths)}, "
+                f"{len(enc_channels) - 1}, {len(pool_strides)}"
+            )
 
         self.in_channels = in_channels
         self.grid_size = grid_size
@@ -679,6 +737,33 @@ class PTv3Wrapper(nn.Module):
             self.dec_blocks.append(stage_blocks)
 
         self.out_proj = nn.Linear(enc_channels[0], out_channels)
+
+    # --------------------------------------------------------------------
+
+    def cumulative_level_strides(self) -> Tuple[int, ...]:
+        """Per-level cumulative pool strides, starting with ``1`` (input level)."""
+        strides = [1]
+        for stride in self.pool_strides:
+            strides.append(strides[-1] * int(stride))
+        return tuple(strides)
+
+    def encoder_pool_stages(self) -> Iterator[Tuple[int, int, "VoxelPoolDown"]]:
+        """Yield ``(stage_index, cumulative_stride, module)`` for each pool.
+
+        Public hook surface for viz/debug code — prefer this over digging into
+        ``down_blocks`` / ``pool_strides`` directly.
+        """
+        cumulative = 1
+        for stage_index, (module, stride) in enumerate(
+            zip(self.down_blocks, self.pool_strides), start=1,
+        ):
+            cumulative *= int(stride)
+            yield stage_index, cumulative, module
+
+    def decoder_unpool_stages(self) -> Iterator[Tuple[int, "VoxelUnpoolUp"]]:
+        """Yield ``(skip_index, module)`` for each unpool / skip fusion."""
+        for skip_index, module in enumerate(self.up_blocks):
+            yield skip_index, module
 
     # --------------------------------------------------------------------
 
