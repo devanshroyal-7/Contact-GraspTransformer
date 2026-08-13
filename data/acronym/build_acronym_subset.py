@@ -10,8 +10,11 @@ and ``data/dataset.py`` (what to load at train/test time, respecting
 the budget in ``training_budgets.json``).
 
 Usage:
-    python data/acronym/build_acronym_subset.py
-    python data/acronym/build_acronym_subset.py --dry_run
+    python data/acronym/build_acronym_subset.py --src /path/to/acronym
+    python data/acronym/build_acronym_subset.py --src /path/to/acronym --dry_run
+
+``--src`` may also be supplied via the ``ACRONYM_ROOT`` environment variable.
+``--dst`` defaults to this repository's ``data/acronym/`` directory.
 """
 
 from __future__ import annotations
@@ -30,8 +33,8 @@ CATEGORIES: list[str] = [
     "Knife", "FoodItem", "Camera", "SodaCan", "WineBottle",
 ]
 
-DEFAULT_SRC = "/home/devansh/dev/contact_graspnet_pytorch/acronym"
-DEFAULT_DST = "/home/devansh/dev/idl_proj_trial/data/acronym"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_DST = REPO_ROOT / "data" / "acronym"
 
 N_TRAIN = 10
 N_TEST = 2
@@ -214,13 +217,25 @@ def build(src_root: Path, dst_root: Path, dry_run: bool = False) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--src", default=DEFAULT_SRC,
-                        help="Path to the external ACRONYM checkout")
-    parser.add_argument("--dst", default=DEFAULT_DST,
-                        help="Path to the project-local data/acronym/ dir")
+    parser.add_argument(
+        "--src",
+        default=os.environ.get("ACRONYM_ROOT"),
+        help="Path to the external ACRONYM checkout (or set ACRONYM_ROOT)",
+    )
+    parser.add_argument(
+        "--dst",
+        default=str(DEFAULT_DST),
+        help="Path to the project-local data/acronym/ dir",
+    )
     parser.add_argument("--dry_run", action="store_true",
                         help="Report what would happen without copying or writing")
     args = parser.parse_args()
+
+    if not args.src:
+        sys.exit(
+            "Provide --src /path/to/acronym or set ACRONYM_ROOT to the "
+            "external ACRONYM checkout."
+        )
 
     src_root = Path(args.src).expanduser().resolve()
     dst_root = Path(args.dst).expanduser().resolve()

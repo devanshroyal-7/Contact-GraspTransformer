@@ -17,13 +17,14 @@ Knife, FoodItem, Camera, SodaCan, WineBottle`.
 ### Rebuilding the subset from the external ACRONYM checkout
 
 ```bash
-python data/acronym/build_acronym_subset.py [--dry_run]
+python data/acronym/build_acronym_subset.py --src /path/to/acronym [--dry_run]
+# equivalently: ACRONYM_ROOT=/path/to/acronym python data/acronym/build_acronym_subset.py
 ```
 
-This script reads `/home/devansh/dev/contact_graspnet_pytorch/acronym/`,
+This script reads an external ACRONYM checkout (`--src` or `ACRONYM_ROOT`),
 deterministically picks 12 unique meshes per category (smallest scale
 per mesh hash, sorted lexicographically), copies them into
-`data/acronym/meshes/` and `data/acronym/grasps/`, removes any stale
+`data/acronym/meshes/` and `data/acronym/grasps/` (or `--dst`), removes any stale
 files not in the new selection, and writes `manifest.json`.
 
 ### `manifest.json` schema
@@ -222,25 +223,32 @@ python data/generate_data.py --mesh_hash 2997f21fa426e18a6ab1a25d0e8f3590
 
 ## Voxel visualization tools
 
-Both voxel visualization scripts open interactive Open3D windows. If GLFW
-fails on Linux Wayland, use the XWayland wrapper shown in `SETUP.md`.
+Dataset samples (depth, point clouds, grasp labels) are visualized with
+`viz/dataset_visualizer.py`. The voxel scripts below open interactive Open3D
+windows. If GLFW fails on Linux Wayland, use the XWayland wrapper shown in
+`SETUP.md`.
 
-### Synthetic / explanatory PTv3 voxel views (`voxel_viz.py`)
+```bash
+python viz/dataset_visualizer.py data/out/train/Mug/<mesh_hash>/000.npz
+python viz/dataset_visualizer.py data/out/train/Mug/<mesh_hash>/001.npz --mode grasps
+```
 
-`voxel_viz.py` visualizes a generated `.npz` point cloud without loading a
+### Synthetic / explanatory PTv3 voxel views (`viz/voxel_viz.py`)
+
+`viz/voxel_viz.py` visualizes a generated `.npz` point cloud without loading a
 trained checkpoint. It is useful for understanding the voxel grid, pooling
 stages, sparse CPE behavior, and serialization order used by the PTv3-style
 backbone helpers.
 
 ```bash
 # Default: pooling view for the example Mug sample
-python3 voxel_viz.py
+python3 viz/voxel_viz.py
 
 # Pooling view for a specific generated sample
-python3 voxel_viz.py data/out/train/Mug/2997f21fa426e18a6ab1a25d0e8f3590/000.npz
+python3 viz/voxel_viz.py data/out/train/Mug/2997f21fa426e18a6ab1a25d0e8f3590/000.npz
 
 # Show all available visualization modes one after another
-python3 voxel_viz.py <sample.npz> --mode all
+python3 viz/voxel_viz.py <sample.npz> --mode all
 ```
 
 Main modes:
@@ -259,38 +267,38 @@ Useful options:
 
 ```bash
 # Change base voxel size in metres
-python3 voxel_viz.py <sample.npz> --grid-size 0.01
+python3 viz/voxel_viz.py <sample.npz> --grid-size 0.01
 
 # Change how many pooling windows are shown
-python3 voxel_viz.py <sample.npz> --mode pooling --stages 3
+python3 viz/voxel_viz.py <sample.npz> --mode pooling --stages 3
 
 # Color sparse view by different feature statistics
-python3 voxel_viz.py <sample.npz> --mode sparse --sparse-color delta_norm
-python3 voxel_viz.py <sample.npz> --mode sparse --sparse-color after_norm
-python3 voxel_viz.py <sample.npz> --mode sparse --sparse-color channel --feature-channel 0
-python3 voxel_viz.py <sample.npz> --mode sparse --sparse-color signed_delta --feature-channel 0
+python3 viz/voxel_viz.py <sample.npz> --mode sparse --sparse-color delta_norm
+python3 viz/voxel_viz.py <sample.npz> --mode sparse --sparse-color after_norm
+python3 viz/voxel_viz.py <sample.npz> --mode sparse --sparse-color channel --feature-channel 0
+python3 viz/voxel_viz.py <sample.npz> --mode sparse --sparse-color signed_delta --feature-channel 0
 
 # Force device for sparse mode; sparse3d requires spconv
-python3 voxel_viz.py <sample.npz> --mode sparse --device cpu
-python3 voxel_viz.py <sample.npz> --mode sparse --device cuda
+python3 viz/voxel_viz.py <sample.npz> --mode sparse --device cpu
+python3 viz/voxel_viz.py <sample.npz> --mode sparse --device cuda
 
 # Reduce dense serialization path lines
-python3 voxel_viz.py <sample.npz> --mode hilbert --curve-line-step 4
+python3 viz/voxel_viz.py <sample.npz> --mode hilbert --curve-line-step 4
 
 # Set a minimum Hilbert precision; 0 auto-selects from voxel span
-python3 voxel_viz.py <sample.npz> --mode hilbert --hilbert-bits 10
+python3 viz/voxel_viz.py <sample.npz> --mode hilbert --hilbert-bits 10
 ```
 
-### Real inference voxel views (`inference_voxel_viz.py`)
+### Real inference voxel views (`viz/inference_voxel_viz.py`)
 
-`inference_voxel_viz.py` loads a trained checkpoint, runs the same point-cloud
+`viz/inference_voxel_viz.py` loads a trained checkpoint, runs the same point-cloud
 preprocessing and model forward pass used by `inference.py`, and records voxel
 locations from each actual PTv3 `VoxelPoolDown` layer. Use this when you want
 to see the voxel size and location changes that happen during model inference.
 
 ```bash
-python3 inference_voxel_viz.py \
-  --ckpt checkpoints/best.pt \
+python3 viz/inference_voxel_viz.py \
+  --ckpt checkpoints/ptv3/<run_folder>/best.pt \
   --points data/out/train/Mug/2997f21fa426e18a6ab1a25d0e8f3590/000.npz
 ```
 
@@ -302,31 +310,31 @@ Useful options:
 
 ```bash
 # Use a different checkpoint or input cloud
-python3 inference_voxel_viz.py --ckpt checkpoints/last.pt --points <sample.npz>
+python3 viz/inference_voxel_viz.py --ckpt checkpoints/ptv3/<run_folder>/last.pt --points <sample.npz>
 
 # Force CPU/GPU selection
-python3 inference_voxel_viz.py --ckpt checkpoints/best.pt --points <sample.npz> --device cpu
-python3 inference_voxel_viz.py --ckpt checkpoints/best.pt --points <sample.npz> --device cuda
+python3 viz/inference_voxel_viz.py --ckpt checkpoints/ptv3/<run_folder>/best.pt --points <sample.npz> --device cpu
+python3 viz/inference_voxel_viz.py --ckpt checkpoints/ptv3/<run_folder>/best.pt --points <sample.npz> --device cuda
 
 # Override checkpoint fallback settings if config is missing
-python3 inference_voxel_viz.py --ckpt <ckpt.pt> --points <sample.npz> --cpe-mode knn
-python3 inference_voxel_viz.py --ckpt <ckpt.pt> --points <sample.npz> --num-points 4096
+python3 viz/inference_voxel_viz.py --ckpt <ckpt.pt> --points <sample.npz> --cpe-mode knn
+python3 viz/inference_voxel_viz.py --ckpt <ckpt.pt> --points <sample.npz> --num-points 4096
 
 # Color voxels and optionally overlay pooled point centers
-python3 inference_voxel_viz.py --ckpt checkpoints/best.pt --points <sample.npz> --color feature_norm
-python3 inference_voxel_viz.py --ckpt checkpoints/best.pt --points <sample.npz> --color height
-python3 inference_voxel_viz.py --ckpt checkpoints/best.pt --points <sample.npz> --show-points
+python3 viz/inference_voxel_viz.py --ckpt checkpoints/ptv3/<run_folder>/best.pt --points <sample.npz> --color feature_norm
+python3 viz/inference_voxel_viz.py --ckpt checkpoints/ptv3/<run_folder>/best.pt --points <sample.npz> --color height
+python3 viz/inference_voxel_viz.py --ckpt checkpoints/ptv3/<run_folder>/best.pt --points <sample.npz> --show-points
 
 # Draw fewer voxel cubes per window for faster rendering
-python3 inference_voxel_viz.py --ckpt checkpoints/best.pt --points <sample.npz> --max-voxels 3000
+python3 viz/inference_voxel_viz.py --ckpt checkpoints/ptv3/<run_folder>/best.pt --points <sample.npz> --max-voxels 3000
 
 # Make the random point sampling reproducible
-python3 inference_voxel_viz.py --ckpt checkpoints/best.pt --points <sample.npz> --seed 0
+python3 viz/inference_voxel_viz.py --ckpt checkpoints/ptv3/<run_folder>/best.pt --points <sample.npz> --seed 0
 ```
 
 Notes:
 
-- `inference_voxel_viz.py` only supports PTv3 checkpoints. A PointNet++ (`pn2`)
+- `viz/inference_voxel_viz.py` only supports PTv3 checkpoints. A PointNet++ (`pn2`)
   checkpoint has no voxel-pooling layers to hook.
 - The input `.npz` can be any generated file containing a `points` array. The
   loader also accepts `.npy`, `.ply`, `.pcd`, `.xyz`, and `.txt` point clouds.

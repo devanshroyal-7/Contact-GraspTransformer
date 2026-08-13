@@ -1,7 +1,5 @@
 # Contact-GraspNet With Point Transformer V3
 
-Refer to [SETUP.md](SETUP.md) for environment setup.
-
 This project trains and evaluates a point-cloud grasp detection model for
 6-DoF robotic manipulation. It adapts the Contact-GraspNet prediction heads to
 two interchangeable backbones:
@@ -13,7 +11,7 @@ two interchangeable backbones:
 
 The end-to-end pipeline covers ACRONYM subset preparation, synthetic depth and
 point-cloud rendering, per-point grasp label generation, training, inference,
-and interactive visualization of both grasp labels and PTv3 voxel behavior.
+Open3D visualization, and MuJoCo lift validation.
 
 ## Project Highlights
 
@@ -24,9 +22,9 @@ and interactive visualization of both grasp labels and PTv3 voxel behavior.
 - Supports both PointNet++ and PTv3 backbones from the same `ContactGraspNet`
   wrapper.
 - Exports inference results as ACRONYM-layout `.h5` files plus JSON sidecars
-  that downstream simulators can use to recover mesh metadata.
-- Includes Open3D visualization tools for rendered samples, grasp labels,
-  synthetic PTv3 voxel stages, and real checkpoint voxel pooling.
+  that a simulator can use to recover mesh metadata.
+- Includes Open3D tools for rendered samples, grasp labels, and PTv3 voxel
+  stages, plus MuJoCo / Trimesh replay of predicted grasps.
 
 ## Quick Start
 
@@ -36,15 +34,26 @@ Follow the full environment instructions in [`SETUP.md`](./SETUP.md).
 conda create -n idlsproj python=3.9 -y
 conda activate idlsproj
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
-pip install -r requirements.txt
+pip install -r requirements.txt -r requirements-data.txt -r requirements-viz.txt -r requirements-eval.txt
 ```
 
 On a CPU-only machine, install the CPU PyTorch wheel instead of the CUDA wheel.
 On a headless server, set `PYOPENGL_PLATFORM=egl` before running rendering
-scripts. See [`SETUP.md`](./SETUP.md) for verification commands and Linux
-Wayland display notes.
+scripts. See [`SETUP.md`](./SETUP.md) for dependency combos, verification
+commands, and Linux Wayland display notes.
 
 ## Common Workflows
+
+### Prepare The ACRONYM Subset
+
+Meshes and grasp files are not committed. Copy the 15-category subset from an
+external ACRONYM checkout:
+
+```bash
+python data/acronym/build_acronym_subset.py --src /path/to/acronym
+```
+
+Details live in [`data.md`](./data.md).
 
 ### Generate Training Data
 
@@ -62,9 +71,8 @@ python data/generate_data.py --category Mug
 python data/generate_data.py --category Mug --n_views 5 --n_points 4096
 ```
 
-Detailed data documentation lives in [`data.md`](./data.md), including the
-ACRONYM subset layout, `manifest.json` schema, output `.npz` keys, coordinate
-frames, and training budget presets.
+See [`data.md`](./data.md) for the ACRONYM subset layout, `manifest.json`
+schema, output `.npz` keys, coordinate frames, and training budget presets.
 
 ### Train a Model
 
@@ -79,16 +87,18 @@ python train.py --data_dir data/out --backbone pn2 --epochs 10
 python train.py --budget_preset 2_per_cat
 ```
 
-Training saves `best.pt` and `last.pt` checkpoints under `checkpoints/` by
-default. Hyper-parameter sweeps are configured in
+Training saves `best.pt` and `last.pt` under a unique run directory inside the
+selected backbone folder, for example
+`checkpoints/ptv3/ptv3_sparse3d_bs4_lr0.001_gcOff_20260429_151900/`.
+Hyper-parameter sweeps are configured in
 [`sweep_config.yaml`](./sweep_config.yaml), and architecture details are
 documented in [`model.md`](./model.md).
 
 ### Run Inference
 
 ```bash
-python inference.py \
-  --ckpt checkpoints/best.pt \
+python inference_cli.py \
+  --ckpt checkpoints/ptv3/<run_folder>/best.pt \
   --points data/out/train/Camera/<mesh_hash>/001.npz \
   --top-k 100 \
   --score-thresh 0.5
@@ -112,37 +122,38 @@ available.
 
 ### MuJoCo Grasp Validation
 
-Use MuJoCo validation to compare whether dataset labels or model-predicted
-grasps physically lift the target object. The recommended comparison path is to
-run both checkpoints on the same generated `.npz` view:
+Use MuJoCo to check whether dataset labels or model-predicted grasps physically
+lift the target object. Compare both backbones on the same generated `.npz`
+view:
 
 ```bash
 # PointNet++ baseline
 python -m eval.visualize_grasp \
   --source pred_cgn \
-  --checkpoint <pointnetpp_checkpoint.pt> \
-  --view_npz data/out/test/Mug/40f9a6cc6b2c3b3a78060a3a3a55e18f/000.npz \
+  --checkpoint checkpoints/pn2/<run_folder>/best.pt \
+  --view_npz data/out/test/Mug/<mesh_hash>/000.npz \
   --start_delay_s 0 \
   --top_k 5
 
 # PTv3 model
 python -m eval.visualize_grasp \
   --source pred_ptv3 \
-  --checkpoint <ptv3_checkpoint.pt> \
-  --view_npz data/out/test/Mug/40f9a6cc6b2c3b3a78060a3a3a55e18f/000.npz \
+  --checkpoint checkpoints/ptv3/<run_folder>/best.pt \
+  --view_npz data/out/test/Mug/<mesh_hash>/000.npz \
   --start_delay_s 0 \
   --top_k 5
 ```
 
-The `.npz` supplies the point cloud and frame information; the matching MuJoCo
-mesh is resolved from `manifest.json`. Success is based on target-object lift.
-Top-k model candidates are previewed together in Trimesh and then executed as
+The `.npz` supplies the point cloud and frame; the matching MuJoCo mesh is
+resolved from `manifest.json`. Success is target-object lift of at least 3 cm.
+Top-k candidates are previewed together in Trimesh and then executed as
 separate MuJoCo trials.
-For visual comparison, add `--compare_labels_preview --preview_all_grasps`: GT
-is shown on the left, model predictions on the right, translucent orange markers
-are a capped background set, green means selected GT top-k, and blue means
-selected model top-k.
-Add `--no_viewer --skip_preview` when running headless batches.
+
+For a visual comparison, add `--compare_labels_preview --preview_all_grasps`:
+ground truth on the left, model predictions on the right, translucent orange
+markers for a capped background set, green for selected GT top-k, and blue for
+selected model top-k. Add `--no_viewer --skip_preview` for headless batches.
+
 See [`SETUP.md`](./SETUP.md#grasp-visualization--mujoco-execution) for dataset
 label replay, raw ACRONYM H5 replay, and exported prediction replay commands.
 
@@ -150,16 +161,19 @@ label replay, raw ACRONYM H5 replay, and exported prediction replay commands.
 
 ```bash
 # Rendered depth / point cloud / grasp labels
-python data/visualizer.py data/out/train/Mug/<mesh_hash>/000.npz
-python data/visualizer.py data/out/train/Mug/<mesh_hash>/001.npz --mode grasps
+python viz/dataset_visualizer.py data/out/train/Mug/<mesh_hash>/000.npz
+python viz/dataset_visualizer.py data/out/train/Mug/<mesh_hash>/001.npz --mode grasps
 
 # Synthetic PTv3 voxel and serialization views
-python voxel_viz.py data/out/train/Mug/<mesh_hash>/000.npz --mode all
+python viz/voxel_viz.py data/out/train/Mug/<mesh_hash>/000.npz --mode all
 
 # Real voxel pooling from a trained PTv3 checkpoint
-python inference_voxel_viz.py \
-  --ckpt checkpoints/best.pt \
+python viz/inference_voxel_viz.py \
+  --ckpt checkpoints/ptv3/<run_folder>/best.pt \
   --points data/out/train/Mug/<mesh_hash>/000.npz
+
+# Space-filling-curve diagrams
+python viz/space_f_curves.py --pattern all --output images/space_f_curves.png
 ```
 
 See the visualization section in [`data.md`](./data.md#voxel-visualization-tools)
@@ -173,15 +187,23 @@ for modes, options, and display troubleshooting.
 | [`data.md`](./data.md) | ACRONYM subset, data generation, output schemas, visualization, and training-data selection. |
 | [`model.md`](./model.md) | PointNet++, PTv3, CGN heads, and training hyper-parameter documentation. |
 | [`train.py`](./train.py) | Main training entry point with checkpointing and W&B logging. |
-| [`inference.py`](./inference.py) | Point-cloud-to-grasp inference CLI and programmatic predictor. |
+| [`checkpoint_io.py`](./checkpoint_io.py) | Shared checkpoint load/save and config extraction for train + inference. |
+| [`inference.py`](./inference.py) | Programmatic grasp predictor library. |
+| [`inference_cli.py`](./inference_cli.py) | Point-cloud-to-grasp inference CLI. |
+| [`model_summary.py`](./model_summary.py) | Checkpoint parameter / shape summary helper. |
 | [`data/generate_data.py`](./data/generate_data.py) | Synthetic render and label generation pipeline. |
 | [`data/dataset.py`](./data/dataset.py) | Dataset loader and train/val/test object-budget filtering. |
-| [`data/visualizer.py`](./data/visualizer.py) | Open3D visualization for generated `.npz` samples. |
-| [`voxel_viz.py`](./voxel_viz.py) | Explanatory PTv3 voxelization, pooling, CPE, and serialization views. |
-| [`inference_voxel_viz.py`](./inference_voxel_viz.py) | Checkpoint-backed PTv3 voxel-pooling visualization. |
+| [`eval/`](./eval) | MuJoCo lift validation and Trimesh grasp previews. |
+| [`viz/dataset_visualizer.py`](./viz/dataset_visualizer.py) | Open3D visualization for generated `.npz` samples and ACRONYM GT grasps. |
+| [`viz/voxel_viz.py`](./viz/voxel_viz.py) | Explanatory PTv3 voxelization, pooling, CPE, and serialization views. |
+| [`viz/inference_voxel_viz.py`](./viz/inference_voxel_viz.py) | Checkpoint-backed PTv3 voxel-pooling visualization. |
+| [`viz/space_f_curves.py`](./viz/space_f_curves.py) | PTv3 space-filling-curve diagram generator. |
 | [`models/`](./models) | ContactGraspNet wrapper, backbones, and prediction heads. |
 | [`loss.py`](./loss.py) | CGN training losses for confidence, pose directions, and width. |
-| [`requirements.txt`](./requirements.txt) | Python dependencies. |
+| [`requirements.txt`](./requirements.txt) | Core train/infer dependencies. |
+| [`requirements-data.txt`](./requirements-data.txt) | Data-generation extras. |
+| [`requirements-viz.txt`](./requirements-viz.txt) | Visualization extras. |
+| [`requirements-eval.txt`](./requirements-eval.txt) | MuJoCo evaluation extras. |
 
 ## Data Layout
 
@@ -227,7 +249,7 @@ the input came from the generated ACRONYM-style dataset.
 
 ## References
 
-- [`CGN.pdf`](./CGN.pdf): Contact-GraspNet reference paper/material.
-- [`ptv3.pdf`](./ptv3.pdf): Point Transformer V3 reference paper/material.
+- [Contact-GraspNet](https://arxiv.org/abs/2103.14127) (Sundermeyer et al.)
+- [Point Transformer V3](https://arxiv.org/abs/2312.10035) (Wu et al.)
 - [`model.md`](./model.md): Local architecture notes and code references.
 - [`data.md`](./data.md): Local data-generation and visualization notes.
