@@ -1,4 +1,4 @@
-"""Direct top-1 IK retargeting and execution for MuJoCo Panda."""
+"""IK retargeting and grasp execution for the MuJoCo Panda."""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ class ExecPhase(Enum):
 
 @dataclass
 class RetargetConfig:
-    """Direct IK retargeting policy for one top-1 grasp execution path."""
+    """IK, motion, and gripper configuration for one trial."""
 
     contact_to_wrist_m: float = 0.070
     approach_offset_m: float = 0.10
@@ -129,7 +129,7 @@ def contact_to_hand_pose(
     *,
     contact_to_wrist_m: float = 0.066,
 ) -> np.ndarray:
-    """Convert the top-1 CGT contact frame into the Panda hand frame."""
+    """Convert the contact frame to the Panda hand frame."""
     T_contact = np.asarray(contact_pose, dtype=np.float64)
     contact = np.asarray(T_contact[:3, 3], dtype=np.float64)
     baseline = _normalize(np.asarray(T_contact[:3, 1], dtype=np.float64))
@@ -170,7 +170,7 @@ def build_retarget_plan_from_hand_pose(
     *,
     cfg: RetargetConfig | None = None,
 ) -> RetargetPlan:
-    """Build simple approach and lift targets from an explicit Panda hand pose."""
+    """Build approach and lift targets from a Panda hand pose."""
     c = cfg or RetargetConfig()
     T_grasp = validate_pose_se3(grasp_pose, "grasp_pose")
     approach = _normalize(T_grasp[:3, 2])
@@ -192,7 +192,7 @@ def build_retarget_plan(
     *,
     cfg: RetargetConfig | None = None,
 ) -> RetargetPlan:
-    """Convert the selected top-1 contact-frame grasp into Panda hand targets."""
+    """Convert a contact-frame grasp to Panda hand targets."""
     c = cfg or RetargetConfig()
     T_grasp = contact_to_hand_pose(
         grasp.contact_pose_SE3,
@@ -294,8 +294,7 @@ def _home_arm_q(model: mujoco.MjModel, panda: dict) -> np.ndarray | None:
 
 
 def _ik_pose_score(pos_err_m: float, rot_err_rad: float) -> float:
-    # Couple translational and rotational miss into one comparable scalar.
-    # 1 rad orientation miss is treated similarly to ~4 cm translation miss.
+    # Weight one radian of rotation error as 4 cm of translation error.
     return float(pos_err_m + 0.04 * rot_err_rad)
 
 
@@ -418,7 +417,7 @@ def solve_ik_dls(
 
 
 class SimpleIKGraspExecutor:
-    """Direct top-1 executor: exact IK per phase, no feasibility filtering."""
+    """Execute one grasp with IK waypoints for each motion phase."""
 
     def __init__(
         self,
@@ -604,8 +603,7 @@ class SimpleIKGraspExecutor:
         self.result.phase_reached = self.phase.value
 
     def _finish(self) -> None:
-        # Keep the grasp-pose error measured at REACH->CLOSE transition.
-        # Recomputing at the end of lift would include intentional lift displacement.
+        # Preserve grasp error measured before the lift.
         if self.result.pose_error_m <= 0.0 and self.result.pose_error_deg <= 0.0:
             err = compute_pose_error(self.plan.grasp_pose, self.current_hand_pose())
             self.result.pose_error_m = err.target_vs_live_translation_m
@@ -715,7 +713,7 @@ class SimpleIKGraspExecutor:
                 self._hold_q = self._current_arm_q()
                 self.phase_timer = 0.0
             elif self.phase_timer >= self.cfg.close_timeout_s:
-                # Max-effort fallback: proceed after timeout even if not at zero width.
+                # Continue after the closure timeout.
                 self.phase = ExecPhase.POST_CLOSE_PAUSE
                 self.result.phase_reached = self.phase.value
                 self._hold_q = self._current_arm_q()

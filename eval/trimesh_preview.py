@@ -63,7 +63,6 @@ def create_gripper_marker(
     )
 
     tmp = trimesh.util.concatenate([cb1, cb2, cfr, cfl])
-    # Per-face colors (3 values broadcast correctly in trimesh; 4 is safer for viewers)
     rgba = np.array(list(color) + [255], dtype=np.uint8) if len(color) == 3 else np.asarray(color, dtype=np.uint8)
     if rgba.size != 4:
         rgba = np.array([0, 255, 0, 255], dtype=np.uint8)
@@ -96,8 +95,7 @@ def show_grasp_preview(
     T_contact_world = T_obj @ T_co
 
     mesh = trimesh.load(object_obj_path, force="mesh")
-    # One RGBA for all faces breaks many GL viewers (flicker / z-artifacts when zooming);
-    # tile to (n_faces, 4). Slight alpha so a wrist marker inside the bulk stays visible.
+    # Translucent faces keep internal gripper markers visible.
     n_f = len(mesh.faces)
     obj_rgba = np.array([165, 200, 230, 220], dtype=np.uint8)
     mesh.visual.face_colors = np.tile(obj_rgba, (n_f, 1))
@@ -143,12 +141,7 @@ def show_grasp_set_preview(
     title: str = "Top-k grasp preview",
     block: bool = True,
 ) -> None:
-    """Object mesh + multiple executed hand poses in one Trimesh scene.
-
-    Each grasp dict should contain ``executed_hand_pose_world`` and may include
-    ``color`` and ``name`` fields. This is meant for inspecting ranked model or
-    label candidates before MuJoCo executes them one-by-one.
-    """
+    """Show hand poses from grasp dicts, with optional color and name fields."""
     T_obj = np.asarray(object_pose_world, dtype=np.float64)
     mesh = trimesh.load(object_obj_path, force="mesh")
     n_f = len(mesh.faces)
@@ -186,11 +179,7 @@ def show_grasp_comparison_preview(
     separation_m: float = 0.35,
     block: bool = True,
 ) -> None:
-    """Side-by-side object mesh + two ranked grasp sets.
-
-    The object is duplicated left/right so ground-truth label grasps and model
-    grasps can be inspected in the same view without overlapping each other.
-    """
+    """Show two grasp sets on separate copies of the object mesh."""
     T_obj = np.asarray(object_pose_world, dtype=np.float64)
     base_mesh = trimesh.load(object_obj_path, force="mesh")
     obj_rgba = np.array([165, 200, 230, 210], dtype=np.uint8)
