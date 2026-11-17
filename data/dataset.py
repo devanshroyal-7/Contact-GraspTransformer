@@ -35,10 +35,7 @@ def _load_budget(budget_path: str) -> tuple[dict, list[str] | None]:
 def resolve_train_cap(budget_path: str,
                       override: Optional[int] = None,
                       preset: Optional[str] = None) -> int:
-    """Return the ``train_objects_per_category`` cap to use.
-
-    Precedence: explicit override > named preset arg > ``active_preset`` in JSON.
-    """
+    """Resolve the cap: explicit override, named preset, then active JSON preset."""
     budget, _ = _load_budget(budget_path)
     if override is not None:
         return int(override)
@@ -94,21 +91,10 @@ class DatasetConfig:
 
 
 class CGNDataset(Dataset):
-    """Point-cloud + grasp-label dataset driven by ``manifest.json``.
+    """Load manifest-selected views with optional point-cloud augmentation.
 
-    File discovery follows the layout produced by ``data/generate_data.py``:
-
-        <data_dir>/<split>/<category>/<mesh_hash>/NNN.npz
-
-    The manifest (``manifest.json``) assigns every mesh a ``split``
-    ("train" or "test") and, for train meshes, a ``rank`` in 1..N_TRAIN.
-    The training budget JSON caps how many ranks per category are used
-    for the "train" / "val" splits; "test" always uses all test meshes.
-
-    Within the "train" split, a fraction of the *views* is held out as
-    "val" (same objects, different renders) so training loss can be
-    monitored.  "test" uses completely unseen meshes.
-    """
+    Train and validation use different views of the same training meshes.
+    Test uses unseen meshes. Files follow split/category/mesh_hash/view.npz."""
 
     LABEL_KEYS = ("confidence", "approach_dirs", "base_dirs", "widths")
 
@@ -159,7 +145,7 @@ class CGNDataset(Dataset):
                                    mesh_hash, "*.npz")
             all_files.extend(sorted(glob.glob(pattern)))
 
-        if not all_files:
+        if not all_files and split != "test":
             expected = os.path.join(
                 config.data_dir, "<split>", "<category>", "<mesh_hash>", "*.npz"
             )
@@ -183,20 +169,19 @@ class CGNDataset(Dataset):
         if split == "val":
             self.files = [all_files[i] for i in indices[:n_val]]
         else:
-            # split == "train" (test returned earlier)
             self.files = [all_files[i] for i in indices[n_val:]]
 
     def __len__(self) -> int:
         return len(self.files)
 
     def __getitem__(self, idx: int) -> SampleBatch:
-        data = np.load(self.files[idx])
-        points = data["points"]
-        labels = {k: data[k] for k in self.LABEL_KEYS}
+        with np.load(self.files[idx]) as data:
+            points = data["points"]
+            labels = {k: data[k] for k in self.LABEL_KEYS}
 
         n = len(points)
-        if n > self.num_points:
-            choice = np.random.choice(n, self.num_points, replace=False)
+        if n != self.num_points:
+            choice = np.random.choice(n, self.num_points, replace=n < self.num_points)
             points = points[choice]
             labels = {k: v[choice] for k, v in labels.items()}
 

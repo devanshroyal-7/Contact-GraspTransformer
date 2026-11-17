@@ -22,7 +22,7 @@ except ImportError:
 
 @dataclass
 class TrainConfig:
-    """Concrete training configuration built once from argparse / W&B."""
+    """Training configuration from CLI arguments and W&B overrides."""
 
     data_dir: str
     backbone: str
@@ -149,55 +149,46 @@ def build_dataloaders(
     cfg: TrainConfig,
     run=None,
 ) -> tuple[DataLoader, DataLoader, Optional[DataLoader]]:
-    """Build train/val/test loaders from real data, or mock data if missing."""
-    if (os.path.exists(cfg.data_dir) and len(os.listdir(cfg.data_dir)) > 0
-            and os.path.exists(cfg.manifest)):
-        active_cap = resolve_train_cap(
-            cfg.budgets,
-            override=cfg.train_objects_per_category,
-            preset=cfg.budget_preset,
-        )
-        if run is not None:
-            wandb.config.update({"active_train_objects_per_category": active_cap},
-                                allow_val_change=True)
-        print(f"Training cap: {active_cap} object(s) per category")
+    """Build loaders from generated samples; the test split is optional."""
+    if not os.path.isdir(cfg.data_dir):
+        raise FileNotFoundError(f"Training data directory not found: {cfg.data_dir}")
+    if not os.path.isfile(cfg.manifest):
+        raise FileNotFoundError(f"Training manifest not found: {cfg.manifest}")
+    active_cap = resolve_train_cap(
+        cfg.budgets,
+        override=cfg.train_objects_per_category,
+        preset=cfg.budget_preset,
+    )
+    if run is not None:
+        wandb.config.update({"active_train_objects_per_category": active_cap},
+                            allow_val_change=True)
+    print(f"Training cap: {active_cap} object(s) per category")
 
-        ds_cfg = DatasetConfig.from_paths(
-            data_dir=cfg.data_dir,
-            manifest_path=cfg.manifest,
-            budget_path=cfg.budgets,
-            num_points=cfg.num_points,
-            train_objects_per_category=cfg.train_objects_per_category,
-            budget_preset=cfg.budget_preset,
-        )
-        train_dataset = CGNDataset(ds_cfg, split="train")
-        val_dataset = CGNDataset(ds_cfg, split="val")
-        test_dataset = CGNDataset(ds_cfg, split="test")
-        print(f"Datasets -> train={len(train_dataset)}  "
-              f"val={len(val_dataset)}  test={len(test_dataset)}")
-        train_loader = DataLoader(train_dataset, batch_size=cfg.batch_size,
-                                  shuffle=True)
-        val_loader = DataLoader(val_dataset, batch_size=cfg.batch_size,
-                                shuffle=False)
-        test_loader = (DataLoader(test_dataset, batch_size=cfg.batch_size,
-                                   shuffle=False)
-                       if len(test_dataset) > 0 else None)
-        return train_loader, val_loader, test_loader
-
-    print("No real data found. Using mock random data to verify pipeline builds.")
-    n = cfg.num_points
-    mock_data = [
-        {
-            "points": torch.randn(n, 3),
-            "confidence": torch.randint(0, 2, (n,)).float(),
-            "approach_dirs": torch.randn(n, 3),
-            "base_dirs": torch.randn(n, 3),
-            "widths": torch.rand(n) * 0.1,
-        }
-        for _ in range(8)
-    ]
-    train_loader = DataLoader(mock_data, batch_size=cfg.batch_size)
-    return train_loader, train_loader, None
+    ds_cfg = DatasetConfig.from_paths(
+        data_dir=cfg.data_dir,
+        manifest_path=cfg.manifest,
+        budget_path=cfg.budgets,
+        num_points=cfg.num_points,
+        train_objects_per_category=cfg.train_objects_per_category,
+        budget_preset=cfg.budget_preset,
+    )
+    train_dataset = CGNDataset(ds_cfg, split="train")
+    val_dataset = CGNDataset(ds_cfg, split="val")
+    if len(train_dataset) == 0:
+        raise ValueError("Training split is empty. Generate more views or adjust the training budget.")
+    if len(val_dataset) == 0:
+        raise ValueError("Validation split is empty. Generate more views or adjust the split configuration.")
+    test_dataset = CGNDataset(ds_cfg, split="test")
+    print(f"Datasets -> train={len(train_dataset)}  "
+          f"val={len(val_dataset)}  test={len(test_dataset)}")
+    train_loader = DataLoader(train_dataset, batch_size=cfg.batch_size,
+                              shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=cfg.batch_size,
+                            shuffle=False)
+    test_loader = (DataLoader(test_dataset, batch_size=cfg.batch_size,
+                               shuffle=False)
+                   if len(test_dataset) > 0 else None)
+    return train_loader, val_loader, test_loader
 
 
 def train_one_epoch(
@@ -309,7 +300,7 @@ def _fmt_run_value(v: object) -> str:
 
 
 def prepare_run(cfg: TrainConfig, run=None) -> str:
-    """Stamp checkpoint paths / W&B metadata; return the human run name."""
+    """Set checkpoint paths and W&B metadata; return the run name."""
     gc = cfg.grad_clip_max_norm or 0
     gc_tag = f"gc{_fmt_run_value(gc)}" if gc > 0 else "gcOff"
     backbone_s = str(cfg.backbone)
@@ -342,7 +333,7 @@ def prepare_run(cfg: TrainConfig, run=None) -> str:
 
 
 def run_training(cfg: TrainConfig, run=None) -> None:
-    """Build model/opt, optionally resume, and run the train/val(/test) loop."""
+    """Build the model and optimizer, optionally resume, and train."""
     backbone_s = str(cfg.backbone)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     cpe_mode = None

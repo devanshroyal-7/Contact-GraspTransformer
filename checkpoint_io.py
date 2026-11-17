@@ -1,10 +1,4 @@
-"""Shared checkpoint load/save helpers for ``train.py`` and inference.
-
-Training checkpoints store a ``config`` dict (via ``dataclasses.asdict`` on
-``TrainConfig``) that includes ``backbone`` and ``cpe_mode``. Prefer those
-fields when rebuilding a model; weight-shape heuristics are only a fallback
-for older checkpoints that lack an embedded config.
-"""
+"""Shared training checkpoint I/O and model configuration recovery."""
 
 from __future__ import annotations
 
@@ -18,13 +12,7 @@ MapLocation = Union[str, torch.device, Mapping[str, str], None]
 
 
 def torch_load_checkpoint(path: str, map_location: MapLocation = None) -> Any:
-    """Load a ``.pt`` file; allow full training dicts (PyTorch 2.6+ safe).
-
-    Training checkpoints embed optimizer/config objects, so ``weights_only``
-    cannot be True. Only load files you trust (local training artifacts).
-    The opaque return value is narrowed by
-    ``state_dict_and_config_from_checkpoint`` / ``load_training_checkpoint``.
-    """
+    """Load a trusted training checkpoint, including its configuration."""
     try:
         return torch.load(  # nosec B614
             path, map_location=map_location, weights_only=False
@@ -34,17 +22,7 @@ def torch_load_checkpoint(path: str, map_location: MapLocation = None) -> Any:
 
 
 def infer_cpe_mode_from_state_dict(state: dict) -> Optional[str]:
-    """Best-effort CPE mode detection from weight shapes/keys.
-
-    Fallback for old checkpoints that have no ``config['cpe_mode']``.
-    Prefer reading ``cpe_mode`` from the checkpoint config when present.
-
-    Checks one representative parameter:
-      * ``knn``      -> ``backbone.enc_blocks.0.0.cpe.weight`` (bare parameter)
-      * ``conv1d`` / ``sparse3d`` -> ``backbone.enc_blocks.0.0.cpe.conv.weight``
-
-    Returns ``None`` if the keys are not found (e.g. ``pn2`` backbone).
-    """
+    """Infer CPE mode from weight names and dimensions when checkpoint config is absent."""
     if not isinstance(state, dict):
         return None
     if "backbone.enc_blocks.0.0.cpe.weight" in state:
@@ -95,11 +73,7 @@ def save_training_checkpoint(
     best_val_loss: float,
     config: Mapping[str, Any] | CheckpointConfig,
 ) -> None:
-    """Persist model + optimizer (+ optional scheduler) and the train config.
-
-    ``config`` should include at least ``backbone`` and ``cpe_mode`` so
-    inference can rebuild a matching graph without weight heuristics.
-    """
+    """Save model, optimizer, scheduler, and configuration for resume and inference."""
     checkpoint = {
         "epoch": epoch,
         "model_state_dict": model.state_dict(),

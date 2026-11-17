@@ -63,11 +63,7 @@ def wrist_from_grasp(
 def gram_schmidt(
     z1: torch.Tensor, z2: torch.Tensor
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Gram-Schmidt orthonormalization (paper Eq. 6).
-
-    Returns (b_hat, a_hat) where b_hat = normalise(z1) and a_hat is the
-    component of z2 orthogonal to b_hat, normalised.
-    """
+    """Normalize z1 as the baseline and orthogonalize z2 as the approach direction."""
     b = F.normalize(z1, p=2, dim=-1)
     a = z2 - (b * z2).sum(dim=-1, keepdim=True) * b
     a = F.normalize(a, p=2, dim=-1)
@@ -75,13 +71,7 @@ def gram_schmidt(
 
 
 class CGNHeads(nn.Module):
-    """Per-point grasp prediction heads following the CGN paper (Section III.C).
-
-    * Confidence: 1 logit per point.
-    * Baseline (b) and approach (a) directions: coupled via in-network
-      Gram-Schmidt orthonormalization (Eq. 6).
-    * Width: 10 equidistant bins in [0, wmax] with multi-label BCE.
-    """
+    """Predict confidence, orthogonal baseline/approach directions, and binned widths."""
 
     def __init__(
         self,

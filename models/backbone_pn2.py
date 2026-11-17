@@ -185,10 +185,7 @@ class PointNetFeaturePropagation(nn.Module):
 
 
 class SimplePointNet2(nn.Module):
-    """
-    A PointNet++ U-Net Architecture Backbone with Set Abstraction and Feature Propagation.
-    Designed to return per-point features mapping back to the original N points.
-    """
+    """PointNet++ encoder-decoder producing per-point features."""
 
     def __init__(self, out_channels: int = 64):
         super().__init__()

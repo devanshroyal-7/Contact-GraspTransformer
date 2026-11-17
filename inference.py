@@ -1,60 +1,4 @@
-"""ContactGraspNet inference: point cloud -> grasp poses.
-
-This script wraps a trained model so you can give it a point cloud of
-*arbitrary size* (any N x 3 numpy array, in any frame) and get back a
-ranked list of 6-DoF grasps in a form that any physics simulator or ROS
-stack can consume directly.
-
-Output format per grasp
------------------------
-Everything is returned in the **same frame as the input point cloud**
-(the script handles mean-subtraction internally and undoes it before
-returning). The canonical output is a batch of 4x4 SE(3) homogeneous
-transforms following the standard Franka-Panda "panda_hand" convention:
-
-    z-axis   = gripper approach direction
-    x-axis   = baseline (the axis fingers open/close along)
-    y-axis   = z x x  (right-handed)
-    origin   = wrist keypoint (between the fingers, at the hand base)
-
-This is the same convention used by the Contact-GraspNet paper, Isaac
-Sim / Isaac Lab, MoveIt, and most grasp datasets. If your simulator
-uses a different convention (e.g. z pointing out of a different face)
-you only need to post-multiply by a constant offset transform.
-
-The predictor returns a dict with numpy arrays:
-
-    {
-        "poses":       (K, 4, 4) float32  - SE(3) transforms
-        "positions":   (K, 3)    float32  - wrist xyz (== poses[:, :3, 3])
-        "quaternions": (K, 4)    float32  - xyzw (ROS / scipy convention)
-        "widths":      (K,)      float32  - target gripper opening [m]
-        "scores":      (K,)      float32  - confidence in [0, 1]
-        "contacts":    (K, 3)    float32  - contact points on object
-    }
-
-Integration notes
------------------
-* PyBullet / Isaac Sim: feed `poses` straight in, or unpack
-  `positions[i]` and `quaternions[i]` (xyzw).
-* ROS 1/2 (MoveIt, moveit_py, etc.): build a
-  `geometry_msgs/PoseStamped` from `positions[i]` / `quaternions[i]`
-  (xyzw). Set `header.frame_id` to the point cloud's TF frame
-  (e.g. `"camera_depth_optical_frame"`).
-* Franka Panda: `poses[i]` can be used as the goal for the
-  `panda_hand` (not `panda_link8`) frame directly.
-
-Usage
------
-    # Programmatic (``train.py`` checkpoints: ``model_state_dict`` + ``config``)
-    from inference import GraspPredictor
-    predictor = GraspPredictor("checkpoints/ptv3/<run_folder>/best.pt")
-    grasps = predictor.predict(points_np, top_k=50, score_thresh=0.5)
-
-    # CLI (writes out/<run>.h5 (ACRONYM layout) + out/<run>.json with mesh info)
-    python inference_cli.py --ckpt checkpoints/ptv3/<run_folder>/best.pt \\
-        --points data/out/train/Camera/<hash>/001.npz --top-k 100
-"""
+"""Point-cloud inference and grasp export in the input coordinate frame."""
 
 from __future__ import annotations
 
@@ -76,12 +20,8 @@ from checkpoint_io import (
 )
 
 
-# ───────────────────────────── config ────────────────────────────────────────
-
 DEFAULT_NUM_POINTS = 4096   # must match the value used during training
 
-
-# ────────────────────────── point cloud I/O ──────────────────────────────────
 
 def load_point_cloud(path: str) -> np.ndarray:
     """Load a point cloud from .npy / .npz / .ply / .pcd / .xyz / .txt.
@@ -119,13 +59,7 @@ def load_point_cloud(path: str) -> np.ndarray:
 def sample_points(points: np.ndarray,
                   num_points: int,
                   rng: Optional[np.random.Generator] = None) -> np.ndarray:
-    """Resample an arbitrary point cloud to exactly ``num_points`` rows.
-
-    * Too many points  -> random subset without replacement.
-    * Too few points   -> sample with replacement (simple duplicate padding).
-    * Exactly right    -> random permutation of all rows (via sampling without
-      replacement), returned as a new array (not an in-place shuffle).
-    """
+    """Sample num_points rows, with replacement when the input has fewer points."""
     rng = rng or np.random.default_rng()
     n = points.shape[0]
     if n == 0:
@@ -133,12 +67,9 @@ def sample_points(points: np.ndarray,
     if n >= num_points:
         idx = rng.choice(n, num_points, replace=False)
     else:
-        # upsample by duplicating points; harmless for the transformer / PN2
         idx = rng.choice(n, num_points, replace=True)
     return points[idx]
 
-
-# ────────────────────────── math helpers ─────────────────────────────────────
 
 def rotation_to_quaternion_xyzw(R: np.ndarray) -> np.ndarray:
     """Batched rotation matrix -> unit quaternion (x, y, z, w).
@@ -198,8 +129,7 @@ def build_poses(contacts: np.ndarray,
     """
     x = baseline / (np.linalg.norm(baseline, axis=-1, keepdims=True) + 1e-8)
     z = approach / (np.linalg.norm(approach, axis=-1, keepdims=True) + 1e-8)
-    # Re-orthogonalise x against z (the network's Gram-Schmidt already does
-    # this, but a second pass is cheap insurance against fp drift).
+    # Re-orthogonalize to limit floating-point drift.
     x = x - (x * z).sum(axis=-1, keepdims=True) * z
     x /= (np.linalg.norm(x, axis=-1, keepdims=True) + 1e-8)
     y = np.cross(z, x)
@@ -250,8 +180,6 @@ def _reindex_grasps(
         contacts[idx],
     )
 
-
-# ─────────────────────────── predictor ───────────────────────────────────────
 
 class GraspArrays(TypedDict):
     """Numpy arrays exported by ``GraspResult.as_dict``."""
@@ -314,14 +242,7 @@ def prepare_model_input(points: np.ndarray,
 
 
 class GraspPredictor:
-    """Thin wrapper around ContactGraspNet for real-time / ROS use.
-
-    Load once, call ``.predict(points)`` per frame.
-
-    Checkpoints from ``train.py`` (``model_state_dict`` + ``config``) are
-    recognised; backbone / ``cpe_mode`` / ``num_points`` are taken from
-    ``config`` when present so the graph matches the weights.
-    """
+    """Load a checkpoint and predict grasps from point clouds."""
 
     def __init__(self,
                  ckpt_path: str,
@@ -340,10 +261,7 @@ class GraspPredictor:
 
         eff_cpe = None
         if eff_backbone == "ptv3":
-            # Explicit constructor arg wins over checkpoint config; both win
-            # over weight-shape heuristics. Prefer config['cpe_mode'] when
-            # present — infer_cpe_mode_from_state_dict is only a fallback for
-            # old checkpoints that lack an embedded train config.
+            # CPE precedence: explicit argument, checkpoint config, then weight shapes.
             eff_cpe = cpe_mode or ckpt_cfg.get("cpe_mode")
             if eff_cpe is None:
                 eff_cpe = infer_cpe_mode_from_state_dict(state) or "knn"
@@ -357,7 +275,6 @@ class GraspPredictor:
         self.model.load_state_dict(state, strict=True)
         self.model.eval()
 
-    # ------------------------------------------------------------------
     @torch.no_grad()
     def predict(self,
                 points: np.ndarray,
@@ -365,23 +282,9 @@ class GraspPredictor:
                 top_k: Optional[int] = None,
                 nms_radius: float = 0.0,
                 seed: Optional[int] = None) -> GraspResult:
-        """Run inference on a single point cloud.
+        """Return ranked grasps in the input frame after sampling, thresholding, and optional NMS.
 
-        Parameters
-        ----------
-        points : (N, 3) array in the sensor / world frame. N may be any
-            size; the method resamples to the model's expected count.
-        score_thresh : drop grasps with confidence < this value.
-        top_k : if set, keep only the top-K grasps by confidence (after
-            threshold + NMS).
-        nms_radius : if > 0, apply greedy NMS on grasp positions with
-            this radius (metres). Good default: 0.02-0.03.
-        seed : optional int for reproducible sampling.
-
-        Returns
-        -------
-        GraspResult with numpy arrays in the *input* frame.
-        """
+        points has shape (N, 3). nms_radius is in metres; seed controls sampling."""
         centroid, centred, xyz = prepare_model_input(
             points,
             num_points=self.num_points,
@@ -447,8 +350,6 @@ def _empty_result() -> GraspResult:
     )
 
 
-# ───────────────────── ACRONYM-style output helpers ─────────────────────────
-
 _TRAINING_NPZ_RE = re.compile(
     r"data/out/(?P<split>train|val|test)/(?P<category>[^/]+)/"
     r"(?P<mesh_hash>[0-9a-fA-F]+)/(?P<view>\d+)\.npz$"
@@ -458,6 +359,8 @@ _TRAINING_NPZ_RE = re.compile(
 def _find_manifest_entry(manifest: list, category: Optional[str],
                          mesh_hash: Optional[str]) -> Optional[dict]:
     """Return the first manifest entry matching ``category`` and ``mesh_hash``."""
+    if not mesh_hash:
+        return None
     for entry in manifest:
         if category is not None and entry.get("category") != category:
             continue
@@ -485,13 +388,9 @@ def resolve_mesh_info(points_path: str,
                       manifest_path: Optional[str],
                       category: Optional[str] = None,
                       mesh_hash: Optional[str] = None) -> MeshInfo:
-    """Best-effort lookup of ``category`` / ``mesh_hash`` / ``scale`` / mesh paths.
+    """Resolve mesh metadata from a training sample path or explicit mesh identity.
 
-    Strategy: parse the ``.npz`` path against the training layout
-    ``data/out/<split>/<Category>/<mesh_hash>/<view>.npz`` and cross-reference
-    with ``manifest.json``. Explicit ``--category`` / ``--mesh-hash`` flags
-    always win over path-inference.
-    """
+    Explicit category and mesh_hash values take precedence over the path."""
     info: MeshInfo = {
         "category": category,
         "mesh_hash": mesh_hash,
@@ -522,17 +421,7 @@ def resolve_mesh_info(points_path: str,
 
 def write_grasps_h5(path: str, grasps: "GraspResult",
                     mesh_info: Optional[MeshInfo] = None) -> None:
-    """Write an ACRONYM-compatible ``.h5`` with predicted grasps.
-
-    Matches the datasets used elsewhere in this repo:
-      * ``grasps/transforms``               (K, 4, 4) float32
-      * ``grasps/qualities/flex/object_in_gripper`` (K,) uint8 (= score>=0.5)
-      * ``grasps/widths``                   (K,) float32
-    Additional (non-ACRONYM) datasets for convenience:
-      * ``grasps/scores`` / ``grasps/positions`` / ``grasps/quaternions``
-      * ``grasps/contacts``
-      * ``object/file`` / ``object/scale`` / ``object/category`` attrs when known
-    """
+    """Write predicted poses, widths, scores, and mesh metadata in HDF5 format."""
     try:
         import h5py
     except ImportError as e:

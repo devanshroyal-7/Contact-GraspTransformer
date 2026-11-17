@@ -1,8 +1,4 @@
-"""Shared typed contracts for samples, predictions, and loss outputs.
-
-Dict conversion stays at npz / checkpoint boundaries; training and model code
-should use these TypedDict shapes instead of ad-hoc string-key bags.
-"""
+"""Shared typed contracts for samples, predictions, and loss outputs."""
 
 from __future__ import annotations
 

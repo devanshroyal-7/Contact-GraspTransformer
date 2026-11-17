@@ -1,9 +1,7 @@
-"""NumPy space-filling-curve helpers for visualization / offline tooling.
+"""NumPy space-filling-curve helpers for visualization and offline tools.
 
-Torch training implementations live in ``models.backbone_ptv3`` (different
-runtime: batched tensors, silent OOB masking for speed). Algorithm comments
-there should continue to point at this module as the readable NumPy reference.
-"""
+Batched Torch implementations in ``models.backbone_ptv3`` mask
+out-of-range coordinates; the NumPy Hilbert encoder validates them."""
 
 from __future__ import annotations
 

@@ -1,30 +1,8 @@
-"""Point Transformer V3 backbone.
+"""Point Transformer V3 backbone with serialized attention and voxel pooling.
 
-Implements the PTv3 mechanisms with pragmatic simplifications so the backbone
-still accepts a dense (B, N, 3) point cloud and returns (B, C, N) per-point
-features.
-
-Upstream reference (not vendored in this repo): Pointcept Point Transformer V3
-  https://github.com/Pointcept/Pointcept
-  (pointcept/models/point_transformer_v3/)
-
-Key mechanisms:
-
-- Multi-pattern space-filling-curve serialization (Z / Trans-Z / 3-D Hilbert
-  and its transposed variant, the latter via Skilling's AxesToTranspose).
-  Readable NumPy reference: ``models.serialization_numpy``.
-- Shuffle Order: per-forward permutation of the ordering list, each block
-  uses a fixed ``order_index`` within its stage (matches the Pointcept
-  reference semantics).
-- xCPE: configurable conditional positional encoding -- 1-D depthwise conv
-  (default), k-NN neighborhood depthwise conv, or spconv submanifold 3-D
-  convolution.
-- Voxel-grid pooling / unpooling via Morton-code clustering + scatter; points
-  are padded back to a dense tensor with a ``valid`` mask so the whole
-  backbone keeps the (B, N, C) contract.
-- Windowed self-attention with a ``key_padding_mask`` so padded tokens never
-  participate in softmax.
-"""
+Accepts (B, N, 3) points and returns (B, C, N) features.
+Reference: https://github.com/Pointcept/Pointcept (point_transformer_v3).
+NumPy serialization reference: ``models.serialization_numpy``."""
 
 from __future__ import annotations
 
@@ -38,8 +16,6 @@ import torch.nn.functional as F
 
 from models.serialization_numpy import SERIALIZATION_PATTERNS
 
-
-# ───────────────────── space-filling curve helpers ───────────────────────────
 
 def _part1by2(n: torch.Tensor) -> torch.Tensor:
     """Spread the low 10 bits of *n* by inserting two 0-bits between each."""
@@ -62,16 +38,9 @@ HILBERT_BITS = 10  # 10 bits per axis -> 30-bit Hilbert index, fits in int64.
 
 def hilbert_encode_3d(grid_coord: torch.Tensor,
                       bits: int = HILBERT_BITS) -> torch.Tensor:
-    """3-D Hilbert curve index from integer grid coords (..., 3) -> (...).
+    """Encode (..., 3) coordinates with Skilling's 3-D Hilbert algorithm.
 
-    Implements Skilling's ``AxesToTranspose`` algorithm (J. Skilling,
-    "Programming the Hilbert Curve", AIP Conf. Proc. 707, 381, 2004),
-    followed by a standard bit interleave from the transpose representation
-    to the Hilbert index.
-
-    ``bits`` controls the per-axis precision: values must satisfy
-    ``0 <= coord < 2**bits``.  At ``bits=10`` the index fits in 30 bits.
-    """
+    Coordinates are masked to ``bits`` per axis; the index uses ``3 * bits`` bits."""
     if grid_coord.shape[-1] != 3:
         raise ValueError(
             f"expected (..., 3) coord tensor, got shape {tuple(grid_coord.shape)}"
@@ -83,9 +52,6 @@ def hilbert_encode_3d(grid_coord: torch.Tensor,
     n = 3
     M = 1 << (bits - 1)
 
-    # Inverse undo walk (MSB -> one-above-LSB). For each axis i:
-    # if bit Q of X[i] is set -> X[0] ^= (Q-1) (invert low bits of X[0])
-    # else                    -> exchange low bits of X[0] and X[i]
     Q = M
     while Q > 1:
         P = Q - 1
@@ -102,11 +68,9 @@ def hilbert_encode_3d(grid_coord: torch.Tensor,
                 z = torch.where(bit_set, z, z ^ t)
         Q >>= 1
 
-    # Gray encode: X[i] ^= X[i-1] for i = 1..n-1
     y = y ^ x
     z = z ^ y
 
-    # Trailing gray undo. t accumulates (Q-1) for every Q where X[n-1] bit is set.
     t = torch.zeros_like(x)
     Q = M
     while Q > 1:
@@ -117,8 +81,6 @@ def hilbert_encode_3d(grid_coord: torch.Tensor,
     y = y ^ t
     z = z ^ t
 
-    # Interleave: bit (j*n + (n-1-i)) of index = bit j of X[i]. X[0] is MSB of
-    # each level's triplet, X[n-1] is LSB, with level j=0 being the LSB level.
     index = torch.zeros_like(x)
     axes = (x, y, z)
     for j in range(bits):
@@ -127,8 +89,6 @@ def hilbert_encode_3d(grid_coord: torch.Tensor,
             index = index | (bit << (j * n + (n - 1 - i)))
     return index
 
-
-# ───────────────── multi-pattern serialization ───────────────────────────────
 
 PATTERNS = SERIALIZATION_PATTERNS
 NUM_PATTERNS = len(PATTERNS)
@@ -154,12 +114,9 @@ def compute_orderings(
     grid_coord: torch.Tensor,
     valid: Optional[torch.Tensor] = None,
 ) -> List[Tuple[torch.Tensor, torch.Tensor]]:
-    """Compute the 4 serialization orderings for `grid_coord` (B, N, 3) int.
+    """Return (sort_idx, unsort_idx) pairs in PATTERNS order.
 
-    If `valid` is provided, invalid points receive a large sentinel key so they
-    sort to the end of every ordering (keeping real points contiguous).
-    Returns list of (sort_idx, unsort_idx) pairs in ``PATTERNS`` order.
-    """
+    Invalid points sort last; grid_coord has shape (B, N, 3)."""
     gc = grid_coord
     gc_trans = gc[..., [1, 2, 0]]
 
@@ -179,8 +136,6 @@ def compute_orderings(
     return [_sort_by_keys(k) for k in keys_list]
 
 
-# ──────────────────────── drop path ──────────────────────────────────────────
-
 class DropPath(nn.Module):
     """Stochastic depth (per-sample drop) for residual blocks."""
 
@@ -197,8 +152,6 @@ class DropPath(nn.Module):
                                           dtype=x.dtype))
         return x * mask / keep
 
-
-# ──────────────────────── CPE variants ───────────────────────────────────────
 
 def _import_spconv() -> Any:
     """Import spconv while hiding its torch AMP deprecation noise."""
@@ -241,13 +194,7 @@ class Conv1DCPE(nn.Module):
 
 
 class KNNCPE(nn.Module):
-    """xCPE via a depthwise k-NN neighborhood aggregation in 3-D.
-
-    Approximates the reference's ``spconv.SubMConv3d(k=3)`` without adding a
-    sparse-conv dependency.  Neighbors are computed on ``grid_coord`` (per
-    batch, per forward) and features are aggregated with per-neighbor
-    depthwise weights.
-    """
+    """Depthwise aggregation over k nearest grid-coordinate neighbors."""
 
     def __init__(self, channels: int, k: int = 16):
         super().__init__()
@@ -266,10 +213,7 @@ class KNNCPE(nn.Module):
         B, N, C = feat.shape
         gc = grid_coord.float()
 
-        # Pairwise squared distance in grid-coord space. Block invalid points
-        # from being selected as neighbors by setting their distance to +inf
-        # when they appear as the "source" in a query. Invalid query rows are
-        # harmless because their output will be masked downstream.
+        # Exclude invalid source points from nearest-neighbor selection.
         dists = torch.cdist(gc, gc, p=2.0)   # (B, N, N)
         inv = ~valid                         # (B, N)
         dists = dists.masked_fill(inv.unsqueeze(1), float('inf'))
@@ -282,20 +226,14 @@ class KNNCPE(nn.Module):
             feat.unsqueeze(1).expand(-1, N, -1, -1), 2, idx
         )  # (B, N, k, C)
 
-        # Depthwise per-neighbor weight (k, C) -> sum over k.
-        # If k got truncated below self.k, slice the weight accordingly.
-        w = self.weight[:k]                  # (k, C)
+        w = self.weight[:k]
         out = (gathered * w).sum(dim=2)      # (B, N, C)
 
         return self.norm(self.proj(out))
 
 
 class SparseCPE(nn.Module):
-    """xCPE via spconv submanifold 3-D convolution (matches reference).
-
-    Requires `spconv` to be importable at construction time.  If unavailable,
-    select ``cpe_mode='knn'`` or ``'conv1d'`` instead.
-    """
+    """Sparse 3-D conditional positional encoding using spconv."""
 
     def __init__(self, channels: int, indice_key: str):
         super().__init__()
@@ -329,8 +267,8 @@ class SparseCPE(nn.Module):
         feats_list = []
         for b in range(B):
             v = valid[b]
-            gc = grid_coord[b][v]                 # (Nv, 3)
-            ft = feat[b][v]                       # (Nv, C)
+            gc = grid_coord[b][v]
+            ft = feat[b][v]
             batch_col = torch.full((gc.shape[0], 1), b,
                                    dtype=torch.int32, device=gc.device)
             indices_list.append(torch.cat([batch_col, gc.int()], dim=1))
@@ -372,17 +310,8 @@ def _make_cpe(cpe_mode: str, channels: int, *, indice_key: str,
     raise ValueError(f"Unknown cpe_mode: {cpe_mode}")
 
 
-# ──────────────────────── attention block ────────────────────────────────────
-
 class GridWindowAttention(nn.Module):
-    """Pre-norm windowed self-attention with xCPE, drop path, and valid mask.
-
-    Operates on (B, N, C) with a companion (B, N) ``valid`` mask and a
-    (B, N, 3) ``grid_coord``.  Attention windows are formed along the current
-    serialized sequence; padded tokens (real points that fall in the window
-    tail, or points invalidated by upstream pooling) are masked out via
-    ``key_padding_mask`` so they don't participate in softmax.
-    """
+    """Windowed self-attention with CPE and a valid-point mask."""
 
     def __init__(self, channels: int, num_heads: int = 4,
                  window_size: int = 256, drop_path: float = 0.0,
@@ -412,9 +341,6 @@ class GridWindowAttention(nn.Module):
         B, N, C = feat.shape
         W = self.window_size
 
-        # xCPE residual: depends on mode. valid & grid_coord are passed so
-        # neighborhood CPE variants can see real 3-D neighbors.
-        # Arg order matches this block: (feat, valid, grid_coord).
         feat = feat + self.cpe(feat, valid, grid_coord)
 
         pad_len = (W - N % W) % W
@@ -429,14 +355,12 @@ class GridWindowAttention(nn.Module):
         wf = feat.reshape(B * nw, W, C)
         key_padding_mask = (~valid_pad).reshape(B * nw, W)
 
-        # Some windows may be entirely padded. Give them at least one "real"
-        # slot so MHA's softmax doesn't NaN; their output is discarded later.
+        # Unmask one slot in empty windows to prevent softmax NaNs.
         all_padded = key_padding_mask.all(dim=-1)
         if all_padded.any():
             key_padding_mask = key_padding_mask.clone()
             key_padding_mask[all_padded, 0] = False
 
-        # pre-norm attention
         res = wf
         wf = self.norm1(wf)
         attn_out, _ = self.mha(wf, wf, wf,
@@ -444,15 +368,12 @@ class GridWindowAttention(nn.Module):
                                need_weights=False)
         wf = res + self.drop_path(attn_out)
 
-        # pre-norm FFN
         res = wf
         wf = self.norm2(wf)
         wf = res + self.drop_path(self.mlp(wf))
 
         return wf.reshape(B, Np, C)[:, :N, :]
 
-
-# ─────────────────────── transition layers ───────────────────────────────────
 
 def _voxel_pool(
     xyz: torch.Tensor,           # (B, N, 3) float
@@ -462,17 +383,10 @@ def _voxel_pool(
     pool_shift: int,
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor,
            torch.Tensor, torch.Tensor]:
-    """Voxel-grid pool by shifting grid coords right by ``pool_shift`` bits.
+    """Average points sharing a voxel after shifting coordinates by pool_shift.
 
-    Points sharing the coarsened voxel are averaged. Output tensors are padded
-    up to the max number of clusters across the batch. Returns:
-        new_xyz: (B, M, 3) float
-        new_grid: (B, M, 3) int
-        new_feat: (B, M, C)
-        new_valid: (B, M) bool
-        inverse: (B, N) long -- fine -> coarse index (clamped for padded)
-        M: int scalar (max cluster count across batch)
-    """
+    Return xyz, grid coordinates, features, valid mask, fine-to-coarse indices,
+    and the maximum cluster count. Batch outputs are padded to that count."""
     B, N, C = feat.shape
     gc_coarse = grid_coord >> pool_shift            # (B, N, 3)
     code = morton_encode(gc_coarse)                 # (B, N) int64
@@ -493,9 +407,8 @@ def _voxel_pool(
         has_invalid = (unique_b.numel() > 0 and
                        unique_b[-1].item() == sentinel)
         M = unique_b.numel() - (1 if has_invalid else 0)
-        M = max(M, 1)  # keep at least one slot to avoid zero-size tensors
+        M = max(M, 1)  # Avoid zero-size tensors when every point is invalid.
 
-        # Scatter-mean for xyz / grid_coord / feat across clusters.
         counts = torch.zeros(unique_b.numel(),
                              device=feat.device, dtype=feat.dtype)
         ones = torch.ones(N, device=feat.device, dtype=feat.dtype)
@@ -507,8 +420,7 @@ def _voxel_pool(
         sum_xyz.index_add_(0, inverse_b, xyz[b])
         mean_xyz = sum_xyz / counts_safe.to(sum_xyz.dtype)
 
-        # Grid coord within a cluster is by construction identical; pick the
-        # first representative by scatter (last-write wins is fine).
+        # Coarsened grid coordinates are identical within each cluster.
         rep_gc = torch.zeros(unique_b.numel(), 3,
                              device=grid_coord.device, dtype=grid_coord.dtype)
         rep_gc[inverse_b] = gc_coarse[b]
@@ -563,19 +475,13 @@ def _apply_masked_bn_act(
 
 
 class VoxelPoolDown(nn.Module):
-    """Voxel-grid pooling via Morton-cluster scatter, with BN+GELU stem.
-
-    Replaces the old sequence-strided 1-D conv transition. Points that share
-    the coarsened voxel (``grid_coord >> pool_shift``) are averaged; the
-    resulting (possibly jagged) per-scene lists are padded to a dense
-    (B, M, C) tensor and tracked with a boolean ``valid`` mask.
-    """
+    """Pool points by voxel and pad each scene to the batch maximum."""
 
     def __init__(self, in_c: int, out_c: int, pool_stride: int = 2) -> None:
         super().__init__()
         if pool_stride < 2:
             raise ValueError(f"pool_stride >= 2 required, got {pool_stride}")
-        self.pool_shift = (pool_stride - 1).bit_length()  # stride=2 -> 1, 4 -> 2
+        self.pool_shift = (pool_stride - 1).bit_length()
         self.proj = nn.Linear(in_c, out_c)
         self.bn = nn.BatchNorm1d(out_c, eps=1e-3, momentum=0.01)
         self.act = nn.GELU()
@@ -596,11 +502,7 @@ class VoxelPoolDown(nn.Module):
 
 
 class VoxelUnpoolUp(nn.Module):
-    """Scatter pooled features back to the fine level and add the skip.
-
-    Uses the ``inverse`` map saved by the paired :class:`VoxelPoolDown` to
-    gather each fine point's cluster representative.
-    """
+    """Restore fine-point features using pooling indices and skip features."""
 
     def __init__(self, in_c: int, skip_c: int, out_c: int):
         super().__init__()
@@ -624,25 +526,8 @@ class VoxelUnpoolUp(nn.Module):
         return _apply_masked_bn_act(out, skip_valid, self.bn, self.act)
 
 
-# ──────────────────────── full backbone ──────────────────────────────────────
-
 class PTv3Wrapper(nn.Module):
-    """Point Transformer V3 backbone with multi-pattern serialization.
-
-    Changes vs. the initial version:
-    - Voxel-grid pool/unpool (scatter on Morton-code clusters) instead of
-      sequence-strided 1-D conv pooling.
-    - Configurable xCPE: ``"conv1d" | "knn" | "sparse3d"``.
-    - Shuffle Order implemented as a one-time per-forward permutation of the
-      ordering list, with each block using ``order_index = i % num_patterns``
-      within its stage (matches Pointcept).
-    - Attention uses a ``key_padding_mask`` so zero-padded / invalid tokens
-      never leak into softmax.
-    - Stacked blocks per stage, BN+GELU after stem and transitions,
-      reversed decoder drop-path schedule.
-    - Accepts optional per-point feature channels (normals / colors) via
-      ``in_channels`` + ``feat`` argument to ``forward``.
-    """
+    """Serialized point transformer producing features in the original point order."""
 
     def __init__(
         self,
@@ -682,18 +567,15 @@ class PTv3Wrapper(nn.Module):
         self.dec_depths = tuple(dec_depths)
         self.pool_strides = tuple(pool_strides)
 
-        # Stem: Linear -> BN -> GELU  (Tier 3.2)
         self.in_proj = nn.Linear(in_channels, enc_channels[0])
         self.in_bn = nn.BatchNorm1d(enc_channels[0], eps=1e-3, momentum=0.01)
         self.in_act = nn.GELU()
 
-        # Drop-path schedules (Tier 3.3)
         enc_dp = [x.item() for x in torch.linspace(0, drop_path_rate,
                                                    max(sum(enc_depths), 1))]
         dec_dp = [x.item() for x in torch.linspace(0, drop_path_rate,
                                                    max(sum(dec_depths), 1))]
 
-        # Encoder (Tier 3.1: depth per stage)
         self.enc_blocks = nn.ModuleList()
         self.down_blocks = nn.ModuleList()
         dp_cursor = 0
@@ -714,8 +596,7 @@ class PTv3Wrapper(nn.Module):
                     pool_stride=pool_strides[s],
                 ))
 
-        # Decoder: depths mirror encoder stages 0..num_stages-2.
-        # Reference reverses the per-stage drop-path slice.
+        # Reverse the drop-path schedule within each decoder stage.
         self.dec_blocks = nn.ModuleList()
         self.up_blocks = nn.ModuleList()
         for s in range(len(enc_channels) - 1):
@@ -738,7 +619,6 @@ class PTv3Wrapper(nn.Module):
 
         self.out_proj = nn.Linear(enc_channels[0], out_channels)
 
-    # --------------------------------------------------------------------
 
     def cumulative_level_strides(self) -> Tuple[int, ...]:
         """Per-level cumulative pool strides, starting with ``1`` (input level)."""
@@ -765,7 +645,6 @@ class PTv3Wrapper(nn.Module):
         for skip_index, module in enumerate(self.up_blocks):
             yield skip_index, module
 
-    # --------------------------------------------------------------------
 
     def _reorder(self, feat: torch.Tensor, idx: torch.Tensor) -> torch.Tensor:
         """Gather ``feat`` (B, N, C) along dim=1 using (B, N) index tensor."""
@@ -813,7 +692,6 @@ class PTv3Wrapper(nn.Module):
             feat = self._reorder(s_feat, u_idx)
         return feat
 
-    # --------------------------------------------------------------------
 
     def forward(
         self,
@@ -826,7 +704,6 @@ class PTv3Wrapper(nn.Module):
         """
         B, N, _ = xyz.shape
 
-        # Assemble input features.
         if feat is None:
             if self.in_channels == 3:
                 x0 = xyz
@@ -843,7 +720,6 @@ class PTv3Wrapper(nn.Module):
                 )
             x0 = torch.cat([xyz, feat], dim=-1)
 
-        # Stem: Linear -> BN -> GELU
         h = self.in_proj(x0)
         h_flat = h.reshape(-1, h.shape[-1])
         h_flat = self.in_bn(h_flat)
@@ -853,17 +729,14 @@ class PTv3Wrapper(nn.Module):
         grid_coord = _quantize(xyz, self.grid_size)          # (B, N, 3) int64
         valid = torch.ones(B, N, dtype=torch.bool, device=xyz.device)
 
-        # Shuffle Order: one permutation of the 4 patterns per forward pass.
         if self.training:
             perm = torch.randperm(self.num_patterns).tolist()
         else:
             perm = list(range(self.num_patterns))
 
-        # Encoder -------------------------------------------------------
         ord_cache: Dict[int, List[Tuple[torch.Tensor, torch.Tensor]]] = {}
         skips: List[Tuple[torch.Tensor, torch.Tensor, torch.Tensor,
                           torch.Tensor, torch.Tensor]] = []
-        # each skip entry: (xyz, grid_coord, feat, valid, inverse_to_coarse or None)
 
         cur_xyz, cur_gc, cur_feat, cur_valid = xyz, grid_coord, h, valid
         for s, stage_blocks in enumerate(self.enc_blocks):
@@ -878,19 +751,15 @@ class PTv3Wrapper(nn.Module):
                 cur_xyz, cur_gc, cur_feat, cur_valid, inverse = down(
                     cur_xyz, cur_gc, cur_feat, cur_valid
                 )
-                # Store inverse as last element of previous skip entry.
+
                 skips[-1] = skips[-1] + (inverse,)
 
-        # Decoder -------------------------------------------------------
-        # Iterate from deepest encoder stage (which was not pushed to skips)
-        # back up through each skip (paired with its stored inverse).
         for s in reversed(range(len(self.up_blocks))):
             skip_xyz, skip_gc, skip_feat, skip_valid, inverse = skips[s]
             up = self.up_blocks[s]
             cur_feat = up(cur_feat, inverse, skip_feat, skip_valid)
             cur_xyz, cur_gc, cur_valid = skip_xyz, skip_gc, skip_valid
-            # Decoder stage blocks: use a fresh cache key so orderings are
-            # computed for this fine level once.
+
             ords = self._orderings_for_level(
                 ord_cache, s, cur_gc, cur_valid, perm,
             )

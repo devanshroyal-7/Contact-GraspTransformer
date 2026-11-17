@@ -16,7 +16,6 @@ import mujoco.viewer
 import numpy as np
 import trimesh
 
-# Allow running as script: python eval/visualize_grasp.py ...
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
@@ -212,13 +211,7 @@ def _load_label_candidates(
     grasp_index: int | None = None,
     top_k: int | None = None,
 ) -> list[dict[str, Any]]:
-    """Build replay candidates from generated data/out labels.
-
-    Generated label confidence is binary, so a plain argmax picks the first
-    positive point in storage order. Rank ties by width first because wider
-    generated grasps are less likely to slip in the Panda replay, then by
-    world-frame approach z for tabletop-friendly candidates.
-    """
+    """Rank generated labels by confidence, width, then world approach z."""
     _require(args.view_npz is not None, "--view_npz is required")
     npz_data = _load_npz_dict(args.view_npz)
     points = np.asarray(npz_data["points"], dtype=np.float64)
@@ -257,7 +250,7 @@ def _load_label_candidates(
     local_order = np.lexsort(
         (
             world_app_z,        # lower z means more top-down in this scene
-            -widths[indices],   # wider generated labels are more stable
+            -widths[indices],   # descending width
             -conf[indices],     # confidence first
         )
     )
@@ -837,7 +830,7 @@ def _run_executor(args, mj_model, mj_data, plan, width_m: float, cfg: RetargetCo
         while executor.phase != ExecPhase.DONE and steps < args.max_steps:
             executor.step()
             steps += 1
-        if steps >= args.max_steps:
+        if steps >= args.max_steps and executor.phase != ExecPhase.DONE:
             executor.force_finish(f"max_steps reached ({args.max_steps})")
         return executor, steps
 
@@ -864,7 +857,7 @@ def _run_executor(args, mj_model, mj_data, plan, width_m: float, cfg: RetargetCo
                 steps += 1
                 time.sleep(cfg.dt)
 
-            if steps >= args.max_steps:
+            if steps >= args.max_steps and executor.phase != ExecPhase.DONE:
                 executor.force_finish(f"max_steps reached ({args.max_steps})")
 
             if viewer.is_running():
@@ -1129,7 +1122,6 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--skip_preview", action="store_true", help=argparse.SUPPRESS)
 
-    # Model / labels modes
     p.add_argument("--view_npz", type=str, default=None, help="Path to per-view .npz")
     p.add_argument("--data_dir", type=str, default="data/out", help="Generated views root")
     p.add_argument(
@@ -1246,7 +1238,7 @@ def _has_cuda() -> bool:
 
 
 def _configure_viewer_render_defaults(viewer) -> None:
-    """Force classic Menagerie-like rendering defaults."""
+    """Set the viewer rendering options."""
     viewer.opt.flags[mujoco.mjtVisFlag.mjVIS_TEXTURE] = 1
     viewer.user_scn.flags[mujoco.mjtRndFlag.mjRND_SKYBOX] = 1
     viewer.user_scn.flags[mujoco.mjtRndFlag.mjRND_SHADOW] = 1

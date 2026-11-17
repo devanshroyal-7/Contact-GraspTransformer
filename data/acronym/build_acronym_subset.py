@@ -1,21 +1,4 @@
-"""Build the 15-category ACRONYM subset used by this project.
-
-Deterministically copies 12 object meshes + grasp files per category
-(10 train + 2 test) from the external ACRONYM checkout into
-``data/acronym/`` and writes ``manifest.json`` annotated with a
-``split`` and ``rank`` field for every object.
-
-The manifest drives both ``data/generate_data.py`` (what to render)
-and ``data/dataset.py`` (what to load at train/test time, respecting
-the budget in ``training_budgets.json``).
-
-Usage:
-    python data/acronym/build_acronym_subset.py --src /path/to/acronym
-    python data/acronym/build_acronym_subset.py --src /path/to/acronym --dry_run
-
-``--src`` may also be supplied via the ``ACRONYM_ROOT`` environment variable.
-``--dst`` defaults to this repository's ``data/acronym/`` directory.
-"""
+"""Copy 10 train and 2 test meshes per category into an ACRONYM subset."""
 
 from __future__ import annotations
 
@@ -44,9 +27,7 @@ GRASP_RE = re.compile(r"^(?P<cat>[A-Za-z0-9]+)_(?P<hash>[0-9a-fA-F]+)_(?P<scale>
 
 
 def find_pairs(src_root: Path, category: str) -> list[tuple[str, str, Path]]:
-    """Return deterministically sorted (hash, scale_str, grasp_src_path) tuples
-    for which both the .obj mesh and the grasp .h5 file exist.
-    """
+    """Return sorted (mesh hash, scale, grasp path) pairs with matching mesh files."""
     mesh_dir = src_root / "meshes" / category
     grasp_dir = src_root / "grasps"
     if not mesh_dir.is_dir():
@@ -63,9 +44,7 @@ def find_pairs(src_root: Path, category: str) -> list[tuple[str, str, Path]]:
         h = m.group("hash")
         if h not in obj_hashes:
             continue
-        # Keep only the lexicographically-smallest scale per mesh_hash, so
-        # each "object" in the manifest is a unique mesh. This matches the
-        # original 5-object layout where every entry had a distinct hash.
+        # Keep one scale per mesh to prevent train/test overlap.
         key = (h, m.group("scale"))
         if h not in by_hash or key < (h, by_hash[h][1]):
             by_hash[h] = (h, m.group("scale"), h5)
@@ -75,10 +54,7 @@ def find_pairs(src_root: Path, category: str) -> list[tuple[str, str, Path]]:
 
 
 def copy_if_needed(src: Path, dst: Path, dry_run: bool = False) -> bool:
-    """Copy ``src`` to ``dst`` unless ``dst`` already matches ``src`` by size.
-
-    Returns True if the file was (or would be) copied.
-    """
+    """Copy a file unless the destination has the same size. Return whether it was copied."""
     if dst.exists() and dst.stat().st_size == src.stat().st_size:
         return False
     if dry_run:
@@ -164,8 +140,7 @@ def build(src_root: Path, dst_root: Path, dry_run: bool = False) -> None:
         with open(manifest_path, "w") as f:
             json.dump(manifest, f, indent=2)
 
-    # Remove any mesh/grasp files that are not referenced by the new manifest
-    # (e.g. leftovers from the 5-object layout or an earlier non-deduped run).
+    # Remove files outside the selected subset.
     kept_meshes: dict[str, set[str]] = {}
     kept_grasps: set[str] = set()
     for entry in manifest:

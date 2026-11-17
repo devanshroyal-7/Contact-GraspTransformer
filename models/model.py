@@ -13,14 +13,9 @@ _VALID_CPE_MODES = frozenset({"knn", "conv1d", "sparse3d"})
 
 
 class ContactGraspNet(nn.Module):
-    """
-    Main model encapsulating the backbone and the heads.
-    User can specify backbone='pn2' or backbone='ptv3' for comparison.
+    """PointNet++ or PTv3 backbone with shared grasp prediction heads.
 
-    PTv3-only knobs (``cpe_mode``, ``in_channels``, ``window_size``) are typed
-    constructor parameters; unknown values are rejected at this boundary rather
-    than being **forwarded into the backbone.
-    """
+    CPE mode, input channels, and window size apply only to PTv3."""
 
     def __init__(
         self,
@@ -65,18 +60,10 @@ class ContactGraspNet(nn.Module):
         xyz: torch.Tensor,
         feat: Optional[torch.Tensor] = None,
     ) -> Predictions:
-        """
-        xyz: (B, N, 3) point cloud
-        feat: optional (B, N, C_extra) per-point extras (normals, colors, ...).
-              Requires backbone='ptv3'. Channel count must satisfy
-              ``3 + C_extra == backbone.in_channels`` (default in_channels=3
-              means ``feat`` must be omitted; pass ``in_channels`` at
-              construction when extras are used).
+        """Predict grasps from xyz (B, N, 3) and optional PTv3 features.
 
-        Returns ``Predictions`` with keys:
-        confidence, confidence_logits, approach_dirs, base_dirs,
-        width_bin_logits, widths, and features (backbone per-point features).
-        """
+        Extra features have shape (B, N, in_channels - 3). Return Predictions
+        with confidence, directions, widths, logits, and backbone features."""
         if feat is not None:
             if self.backbone_name != "ptv3":
                 raise ValueError(

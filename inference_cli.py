@@ -1,11 +1,4 @@
-"""CLI entry point for ContactGraspNet inference.
-
-Library API lives in ``inference.py`` (``GraspPredictor``, I/O helpers).
-Run::
-
-    python inference_cli.py --ckpt checkpoints/ptv3/<run_folder>/best.pt \\
-        --points data/out/train/Camera/<hash>/001.npz --top-k 100
-"""
+"""Inference CLI for grasp export and test-set forward timing."""
 
 from __future__ import annotations
 

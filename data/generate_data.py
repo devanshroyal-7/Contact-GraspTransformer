@@ -1,30 +1,4 @@
-"""
-Unified single-object data generator for Contact-GraspNet training.
-
-For each object in the manifest, renders depth from multiple camera views,
-back-projects to point clouds, transforms ACRONYM grasp labels into the
-same camera frame, and saves one .npz per view containing everything
-needed for training AND visualization.
-
-Output .npz keys:
-    depth          (H, W)    float32   depth image in metres
-    points         (N, 3)    float32   mean-centred point cloud (camera frame)
-    confidence     (N,)      float32   per-point grasp score (0 or 1)
-    approach_dirs  (N, 3)    float32   per-point approach direction
-    base_dirs      (N, 3)    float32   per-point base / binormal direction
-    widths         (N,)      float32   per-point grasp width
-    camera_pose    (4, 4)    float64   camera pose (for reference)
-
-Usage:
-    python data/generate_data.py                                 # all 180 objects, 360 views each
-    python data/generate_data.py --category Mug                  # just Mug (all its train+test meshes)
-    python data/generate_data.py --splits train                  # only train meshes
-    python data/generate_data.py --mesh_hash 2997f21fa426...     # one specific mesh
-    python data/generate_data.py --n_views 5 --n_points 2048     # quick smoke test
-
-Output layout (one file per view):
-    <out_root>/<split>/<category>/<mesh_hash>/NNN.npz
-"""
+"""Render ACRONYM objects and save point clouds with grasp labels."""
 
 from __future__ import annotations
 
@@ -77,8 +51,6 @@ def configure_pyopengl(platform: str = "egl") -> None:
     pyrender = _pyrender
 
 
-# ─────────────────────────────── camera poses ─────────────────────────────────
-
 def sample_camera_poses(n_views: int = 36,
                         distance_range=(0.55, 0.85),
                         elevation_deg=(20, 70)) -> list[np.ndarray]:
@@ -99,8 +71,6 @@ def sample_camera_poses(n_views: int = 36,
     return poses
 
 
-# ───────────────────────────── depth → point cloud ────────────────────────────
-
 def depth_to_pointcloud(depth: np.ndarray,
                         fx: float, fy: float,
                         cx: float, cy: float) -> np.ndarray:
@@ -113,11 +83,7 @@ def depth_to_pointcloud(depth: np.ndarray,
 
 
 def sample_points_or_pad(pc: np.ndarray, n: int) -> np.ndarray:
-    """Sub-/over-sample *pc* to exactly *n* rows; empty input → zero pad.
-
-    Distinct from ``inference.sample_points``, which rejects empty clouds.
-    Data generation needs a fixed-size tensor even when a depth view is empty.
-    """
+    """Sample exactly n points, or return zeros for an empty cloud."""
     m = len(pc)
     if m == 0:
         return np.zeros((n, 3), dtype=np.float32)
@@ -128,8 +94,6 @@ def sample_points_or_pad(pc: np.ndarray, n: int) -> np.ndarray:
     return pc[idx]
 
 
-# ─────────────────────── coordinate-frame conversion ──────────────────────────
-
 def opengl_to_opencv_cam(cam_pose_gl: np.ndarray) -> np.ndarray:
     """Convert an OpenGL camera pose to OpenCV convention (flip Y & Z cols)."""
     pose = cam_pose_gl.copy()
@@ -139,17 +103,12 @@ def opengl_to_opencv_cam(cam_pose_gl: np.ndarray) -> np.ndarray:
 
 
 def world_to_cam_matrix(cam_pose_gl: np.ndarray) -> np.ndarray:
-    """4x4 transform that maps world-frame points into the OpenCV camera frame.
-
-    Equivalent to:  F @ inv(cam_pose_gl)   where F = diag(1,-1,-1,1).
-    """
+    """Return the transform from world coordinates to the OpenCV camera frame."""
     return np.linalg.inv(opengl_to_opencv_cam(cam_pose_gl))
 
 
-# ──────────────────────────── scene construction ──────────────────────────────
-
 def load_and_prepare_mesh(mesh_path: str, scale: float):
-    """Load mesh, scale, centre.  Returns (mesh, mesh_mean)."""
+    """Load, scale, and center a mesh. Return the mesh and its original mean."""
     mesh = trimesh.load(mesh_path, force="mesh")
     mesh.apply_scale(scale)
     mesh_mean = mesh.vertices.mean(axis=0)
@@ -184,19 +143,11 @@ def build_scene(mesh: trimesh.Trimesh, intr: dict,
     return scene, cam_node, renderer, obj_pose, table_dims
 
 
-# ──────────────────────────── grasp loading ───────────────────────────────────
-
 def estimate_grasp_widths(transforms: np.ndarray,
                           mesh_vertices: np.ndarray,
                           success_mask: np.ndarray,
                           search_radius: float = 0.10) -> np.ndarray:
-    """Estimate per-grasp closing widths from mesh geometry.
-
-    For each successful grasp, finds mesh vertices near the TCP and measures
-    the object's extent along the gripper baseline direction.  The default
-    search_radius is large (0.10m) because the TCP sits at the gripper base
-    frame, which is offset from the object surface by finger length.
-    """
+    """Estimate closing widths from vertices within 0.10 m of each successful grasp wrist."""
     G = len(transforms)
     widths = np.full(G, 0.08, dtype=np.float32)
 
@@ -227,14 +178,10 @@ def estimate_grasp_widths(transforms: np.ndarray,
 
 def load_grasps(h5_path: str, mesh_mean: np.ndarray,
                 mesh_vertices: np.ndarray | None = None):
-    """Load ACRONYM grasps and put them in the centred-mesh local frame.
+    """Load grasps in the centered mesh frame.
 
-    ACRONYM stores grasp transforms in the *scaled* object frame (real-world
-    metres), so translations must NOT be re-scaled.  Only the mesh-mean
-    shift is applied to match the centred mesh.
-
-    Returns (transforms, success_mask, widths).
-    """
+    ACRONYM translations are already scaled to meters. Subtract only the mesh mean.
+    Return transforms, success mask, and widths."""
     with h5py.File(h5_path, "r") as f:
         transforms = np.array(f["grasps/transforms"])             # (G, 4, 4)
         success = np.array(f["grasps/qualities/flex/object_in_gripper"])  # (G,)
@@ -269,15 +216,10 @@ def assign_grasp_labels(points: np.ndarray,
                         grasp_widths: np.ndarray | None = None,
                         object_mask: np.ndarray | None = None,
                         dist_thresh: float = 0.005):
-    """Per-point labels via radius query around surface-projected grasp centres.
+    """Assign the nearest successful grasp within dist_thresh to each object point.
 
-    *surface_centres* are grasp TCPs projected onto the nearest mesh vertex
-    (in the same centred camera frame as *points*).  This avoids assigning
-    labels to table points when the raw TCP is below the visible surface.
-
-    If *object_mask* is provided, the KDTree is built only from object
-    points so labels cannot land on table geometry.
-    """
+    Surface centers and points must share the centered camera frame.
+    A supplied object mask excludes table points."""
     N = len(points)
     confidence    = np.zeros(N, dtype=np.float32)
     approach_dirs = np.zeros((N, 3), dtype=np.float32)
@@ -291,8 +233,10 @@ def assign_grasp_labels(points: np.ndarray,
     if grasp_widths is None:
         grasp_widths = np.full(len(surface_centres), 0.08, dtype=np.float32)
 
-    if object_mask is not None and object_mask.any():
-        obj_idx = np.where(object_mask)[0]
+    if object_mask is not None:
+        obj_idx = np.flatnonzero(object_mask)
+        if not len(obj_idx):
+            return confidence, approach_dirs, base_dirs, widths
         tree = KDTree(points[obj_idx])
     else:
         obj_idx = np.arange(N)
@@ -316,16 +260,9 @@ def assign_grasp_labels(points: np.ndarray,
     return confidence, approach_dirs, base_dirs, widths
 
 
-# ──────────────────────── render + label one view ─────────────────────────────
-
 def _roi_crop(pc: np.ndarray, object_mask: np.ndarray,
               min_edge: float = 0.30, scale: float = 2.0) -> np.ndarray:
-    """Return boolean mask for a local ROI cube around the object.
-
-    Edge length = max(scale * largest_object_span, min_edge), following
-    the CGN paper's local-region strategy (Sec. IV-B).  This keeps the
-    object centred with ample surrounding table context (~3/4 table).
-    """
+    """Return a cube mask around the object with edge max(scale * span, min_edge)."""
     if not object_mask.any():
         return np.ones(len(pc), dtype=bool)
     obj_pts = pc[object_mask]
@@ -343,14 +280,10 @@ def render_and_label_view(
     n_points: int,
     table_surface_z: float = 0.3,
 ) -> dict:
-    """Render one view and compute per-point grasp labels.
+    """Render a view and assign labels in the centered OpenCV camera frame.
 
-    ``grasps.mesh_verts`` are the centred-mesh vertices (N_v, 3), used to
-    project each grasp TCP onto the nearest surface vertex before label
-    assignment.
-
-    Returns dict ready for np.savez_compressed.
-    """
+    Project grasp wrists onto the nearest mesh vertices. The saved camera_pose
+    maps world coordinates into the centered camera frame."""
     scene = view.scene
     cam_node = view.cam_node
     renderer = view.renderer
@@ -373,7 +306,7 @@ def render_and_label_view(
                     confidence=np.zeros(n_points, dtype=np.float32),
                     approach_dirs=empty, base_dirs=empty,
                     widths=np.zeros(n_points, dtype=np.float32),
-                    camera_pose=cam_pose_gl)
+                    camera_pose=world_to_cam_matrix(cam_pose_gl))
 
     w2c = world_to_cam_matrix(cam_pose_gl)
     c2w = np.linalg.inv(w2c)
@@ -387,7 +320,7 @@ def render_and_label_view(
 
     pc = sample_points_or_pad(pc_roi, n_points)
 
-    # Labels must use object_mask on the *subsampled* cloud, not the raw ROI.
+    # Recompute the object mask after sampling.
     pc_world_sub = (c2w[:3, :3] @ pc.T + c2w[:3, 3:4]).T
     object_mask = pc_world_sub[:, 2] > table_surface_z + 0.004
 
@@ -431,8 +364,6 @@ def render_and_label_view(
                 base_dirs=base, widths=w,
                 camera_pose=cam_pose_out)
 
-
-# ───────────────────────────── per-object loop ────────────────────────────────
 
 def generate_object(acronym_root: str, entry: dict,
                     out_dir: str, n_views: int, n_points: int):
@@ -489,8 +420,6 @@ def generate_object(acronym_root: str, entry: dict,
     print(f"  {cat}: saved {n_views} views → {out_dir}  "
           f"(avg {total_pos / max(n_views, 1):.0f} positive pts/view)")
 
-
-# ─────────────────────────────────── CLI ──────────────────────────────────────
 
 def main():
     parser = argparse.ArgumentParser(

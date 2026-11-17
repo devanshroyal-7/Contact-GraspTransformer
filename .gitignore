@@ -12,6 +12,7 @@ checkpoints/
 models/checkpoints/
 out/
 .desloppify/
-tea_debug.log
-# Open3D may dump RenderOption_<timestamp>.json into the CWD when a viewer closes.
+*.log
 RenderOption*.json
+
+.venv/

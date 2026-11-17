@@ -1,15 +1,4 @@
-"""Visualize .npz files produced by ``data/generate_data.py``.
-
-Dataset-artifact viewer (depth / point cloud / grasp labels / ACRONYM GT).
-Lives under ``viz/`` with the other visualization CLIs; ``data/`` owns
-generation and loading only.
-
-Usage:
-    python viz/dataset_visualizer.py data/out/train/Mug/<hash>/000.npz
-    python viz/dataset_visualizer.py data/out/train/Mug/<hash>/000.npz --mode grasps
-    python viz/dataset_visualizer.py Mug --mode gt --max_grasps 50
-    python viz/dataset_visualizer.py Mug --mode gt --debug
-"""
+"""Visualize generated depth, point clouds, labels, and ACRONYM grasps."""
 
 from __future__ import annotations
 
@@ -62,8 +51,6 @@ def configure_display() -> None:
     os.environ.setdefault("XDG_SESSION_TYPE", "x11")
 
 
-# ──────────────────────────────── depth ───────────────────────────────────────
-
 def show_depth(depth: np.ndarray, title: str = "Depth", ax=None):
     import matplotlib.pyplot as plt
 
@@ -82,8 +69,6 @@ def show_depth(depth: np.ndarray, title: str = "Depth", ax=None):
         plt.show()
     return im
 
-
-# ──────────────────────────── point cloud ─────────────────────────────────────
 
 def show_pc(pc: np.ndarray, title: str = "Point Cloud",
             max_pts: int = 6000):
@@ -132,8 +117,6 @@ def _pc_matplotlib(pc, title="Point Cloud", max_pts=6000,
         plt.show()
 
 
-# ────────────────────────── grasp visualisation ───────────────────────────────
-
 def show_grasps(data: GraspSampleNP, title: str = "Grasps", max_pts: int = 6000):
     """Point cloud coloured by grasp confidence (blue=0, red=1)."""
     import matplotlib.pyplot as plt
@@ -162,15 +145,11 @@ def show_grasps(data: GraspSampleNP, title: str = "Grasps", max_pts: int = 6000)
                        max_pts=max_pts, colors=conf, cmap=cmap)
 
 
-# ──────────────────────── 3-D gripper pose drawing ────────────────────────
-
 def _gripper_lines(wrist, approach, binormal, width=0.08):
-    """Return (6×3 points, 6×2 line-indices) for one Panda gripper.
+    """Return five gripper points and six edges in the input frame.
 
-    ACRONYM places the gripper **wrist** at *wrist*.  Fingers extend
-    forward along *approach* and close along *binormal*.
-    Finger length constants come from ``models.cgn_heads``.
-    """
+    Fingers extend from the wrist along approach and close along binormal.
+    Width and finger lengths use meters."""
     half_w = width / 2
     fb_l = wrist + PANDA_FINGER_BASE * approach + half_w * binormal
     fb_r = wrist + PANDA_FINGER_BASE * approach - half_w * binormal
@@ -309,8 +288,6 @@ def _show_poses_mpl(data, centres, approaches, binormals, widths,
     else:
         plt.show()
 
-
-# ─────────── ground-truth ACRONYM grasps (mesh local frame) ───────────────
 
 def _load_gt(category: str, acronym_root: str = "data/acronym"):
     """Load mesh surface points + all successful grasps for *category*."""
@@ -476,8 +453,6 @@ def _show_gt_mpl(surface_pts, centres, approaches, binormals,
         plt.show()
 
 
-# ─────────────────────────── combined views ───────────────────────────────────
-
 def _as_grasp_sample(data: dict) -> GraspSampleNP:
     """Narrow a loaded NPZ mapping into ``GraspSampleNP`` (required keys)."""
     required = ("points", "confidence", "approach_dirs", "base_dirs", "widths")
@@ -525,8 +500,6 @@ def show_single(path: str, mode: str = "both", save: str | None = None,
                     max_grasps=max_grasps,
                 )
 
-
-# ──────────────────────────── folder / grid ───────────────────────────────────
 
 def show_depth_grid(folder: str, cols: int = 6):
     import matplotlib.pyplot as plt
@@ -585,8 +558,6 @@ def show_folder(folder: str, mode: str = "both", grid: bool = False,
             out = os.path.join(save, f"{base}_{mode}.png")
         show_single(f, mode=mode, save=out, max_grasps=max_grasps)
 
-
-# ─────────────────────────────────── CLI ──────────────────────────────────────
 
 def main():
     parser = argparse.ArgumentParser(

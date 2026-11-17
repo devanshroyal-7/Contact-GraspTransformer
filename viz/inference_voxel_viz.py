@@ -1,15 +1,4 @@
-"""Visualize PTv3 voxels during real ContactGraspNet inference.
-
-This is the inference-time counterpart to ``viz.voxel_viz``. It loads a trained
-checkpoint, runs the same preprocessing and forward pass used by
-``GraspPredictor.predict``, and records the voxel grids produced by each PTv3
-``VoxelPoolDown`` and ``VoxelUnpoolUp`` layer, plus the final per-point
-features that feed the ContactGraspNet heads.
-
-Example:
-    python viz/inference_voxel_viz.py --ckpt checkpoints/ptv3/<run_folder>/best.pt \
-        --points data/out/train/Mug/2997f21fa426e18a6ab1a25d0e8f3590/000.npz
-"""
+"""Visualize PTv3 pooling, unpooling, and point features from checkpoint inference."""
 
 from __future__ import annotations
 
