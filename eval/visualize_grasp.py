@@ -16,10 +16,14 @@ import mujoco.viewer
 import numpy as np
 import trimesh
 
-# Allow running as script: python eval/visualize_grasp.py ...
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
+from checkpoint_io import (
+    infer_cpe_mode_from_state_dict,
+    state_dict_and_config_from_checkpoint,
+    torch_load_checkpoint,
+)
 from eval.ik_retarget import (
     ExecPhase,
     RetargetConfig,
@@ -44,33 +48,13 @@ from models.model import ContactGraspNet
 CONTACT_FRAME_SOURCES = {"labels", "pred_cgn", "pred_ptv3"}
 
 
-def _extract_state_dict(ckpt: Any) -> dict[str, Any]:
-    if isinstance(ckpt, dict) and "model_state_dict" in ckpt:
-        state = ckpt["model_state_dict"]
-    elif isinstance(ckpt, dict) and "state_dict" in ckpt:
-        state = ckpt["state_dict"]
-    elif isinstance(ckpt, dict) and "model" in ckpt and isinstance(ckpt["model"], dict):
-        state = ckpt["model"]
-    else:
-        state = ckpt
-    if not isinstance(state, dict):
-        raise ValueError("Checkpoint does not contain a valid state_dict")
-    if state:
-        k0 = next(iter(state.keys()))
-        if isinstance(k0, str) and k0.startswith("module."):
-            state = {k[len("module.") :]: v for k, v in state.items()}
+def _strip_module_prefix(state: dict[str, Any]) -> dict[str, Any]:
+    if not state:
+        return state
+    k0 = next(iter(state.keys()))
+    if isinstance(k0, str) and k0.startswith("module."):
+        return {k[len("module.") :]: v for k, v in state.items()}
     return state
-
-
-def _checkpoint_config_value(ckpt: Any, name: str, default: Any = None) -> Any:
-    if not isinstance(ckpt, dict):
-        return default
-    cfg = ckpt.get("config")
-    if cfg is None:
-        return default
-    if isinstance(cfg, dict):
-        return cfg.get(name, default)
-    return getattr(cfg, name, default)
 
 
 def _load_model_for_backbone(
@@ -83,27 +67,30 @@ def _load_model_for_backbone(
     import torch
 
     dev = torch.device(device)
-    ckpt = torch.load(checkpoint, map_location=dev, weights_only=False)
-    ckpt_backbone = _checkpoint_config_value(ckpt, "backbone")
+    raw = torch_load_checkpoint(checkpoint, map_location=dev)
+    state, ckpt_cfg = state_dict_and_config_from_checkpoint(raw)
+    state = _strip_module_prefix(state)
+
+    ckpt_backbone = ckpt_cfg.get("backbone")
     if ckpt_backbone is not None and str(ckpt_backbone) != str(backbone):
         raise ValueError(
             f"Checkpoint was trained with backbone={ckpt_backbone!r}, "
             f"but --source requested backbone={backbone!r}."
         )
 
-    backbone_kwargs: dict[str, Any] | None = None
+    cpe_mode = None
     if backbone == "ptv3":
-        cpe_mode = (
-            str(_checkpoint_config_value(ckpt, "cpe_mode", "knn"))
-            if ptv3_cpe_mode == "auto"
-            else str(ptv3_cpe_mode)
-        )
-        backbone_kwargs = {"cpe_mode": cpe_mode}
-    else:
-        cpe_mode = None
+        if ptv3_cpe_mode == "auto":
+            cpe_mode = str(
+                ckpt_cfg.get("cpe_mode")
+                or infer_cpe_mode_from_state_dict(state)
+                or "knn"
+            )
+        else:
+            cpe_mode = str(ptv3_cpe_mode)
 
     try:
-        model = ContactGraspNet(backbone_type=backbone, backbone_kwargs=backbone_kwargs).to(dev)
+        model = ContactGraspNet(backbone=backbone, cpe_mode=cpe_mode).to(dev)
     except ImportError as exc:
         if backbone == "ptv3" and cpe_mode == "sparse3d":
             raise ValueError(
@@ -114,7 +101,6 @@ def _load_model_for_backbone(
             ) from exc
         raise
 
-    state = _extract_state_dict(ckpt)
     try:
         model.load_state_dict(state, strict=True)
     except RuntimeError as exc:
@@ -225,13 +211,7 @@ def _load_label_candidates(
     grasp_index: int | None = None,
     top_k: int | None = None,
 ) -> list[dict[str, Any]]:
-    """Build replay candidates from generated data/out labels.
-
-    Generated label confidence is binary, so a plain argmax picks the first
-    positive point in storage order. Rank ties by width first because wider
-    generated grasps are less likely to slip in the Panda replay, then by
-    world-frame approach z for tabletop-friendly candidates.
-    """
+    """Rank generated labels by confidence, width, then world approach z."""
     _require(args.view_npz is not None, "--view_npz is required")
     npz_data = _load_npz_dict(args.view_npz)
     points = np.asarray(npz_data["points"], dtype=np.float64)
@@ -270,7 +250,7 @@ def _load_label_candidates(
     local_order = np.lexsort(
         (
             world_app_z,        # lower z means more top-down in this scene
-            -widths[indices],   # wider generated labels are more stable
+            -widths[indices],   # descending width
             -conf[indices],     # confidence first
         )
     )
@@ -850,7 +830,7 @@ def _run_executor(args, mj_model, mj_data, plan, width_m: float, cfg: RetargetCo
         while executor.phase != ExecPhase.DONE and steps < args.max_steps:
             executor.step()
             steps += 1
-        if steps >= args.max_steps:
+        if steps >= args.max_steps and executor.phase != ExecPhase.DONE:
             executor.force_finish(f"max_steps reached ({args.max_steps})")
         return executor, steps
 
@@ -877,7 +857,7 @@ def _run_executor(args, mj_model, mj_data, plan, width_m: float, cfg: RetargetCo
                 steps += 1
                 time.sleep(cfg.dt)
 
-            if steps >= args.max_steps:
+            if steps >= args.max_steps and executor.phase != ExecPhase.DONE:
                 executor.force_finish(f"max_steps reached ({args.max_steps})")
 
             if viewer.is_running():
@@ -1142,7 +1122,6 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--skip_preview", action="store_true", help=argparse.SUPPRESS)
 
-    # Model / labels modes
     p.add_argument("--view_npz", type=str, default=None, help="Path to per-view .npz")
     p.add_argument("--data_dir", type=str, default="data/out", help="Generated views root")
     p.add_argument(
@@ -1259,7 +1238,7 @@ def _has_cuda() -> bool:
 
 
 def _configure_viewer_render_defaults(viewer) -> None:
-    """Force classic Menagerie-like rendering defaults."""
+    """Set the viewer rendering options."""
     viewer.opt.flags[mujoco.mjtVisFlag.mjVIS_TEXTURE] = 1
     viewer.user_scn.flags[mujoco.mjtRndFlag.mjRND_SKYBOX] = 1
     viewer.user_scn.flags[mujoco.mjtRndFlag.mjRND_SHADOW] = 1

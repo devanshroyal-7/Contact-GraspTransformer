@@ -1,204 +1,92 @@
-# Environment Setup
+# Setup
 
-## 1) Create Environment
+## Environment
 
 ```bash
-conda create -n idlsproj python=3.9 -y
-conda activate idlsproj
+conda create -n cgt python=3.11 -y
+conda activate cgt
 ```
 
-## 2) Install PyTorch
+For an NVIDIA GPU, install the PyTorch build that matches your driver before the project dependencies.
+For CUDA 12.8:
 
 ```bash
-# CUDA 12.8 example
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
-
-# CPU-only fallback
-# pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
 ```
 
-## 3) Install Project Dependencies
+For CPU-only PyTorch, install the CPU wheel before the project dependencies:
 
 ```bash
-python -m pip install -U pip
-pip install -r requirements.txt
-pip install obj2mjcf robot_descriptions
+python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
 ```
 
-## 4) Verify
+Install the full project dependencies:
 
 ```bash
-python -c "import torch; print('torch', torch.__version__, '| CUDA', torch.cuda.is_available())"
-python -c "import trimesh, open3d, h5py; print('geometry imports OK')"
-python -c "import mujoco; print('MuJoCo OK')"
+python -m pip install -r requirements.txt -r requirements-data.txt -r requirements-viz.txt -r requirements-eval.txt
 ```
 
-## Data + Training Quick Commands
+Dependencies use four files:
+
+| File | Purpose |
+| --- | --- |
+| `requirements.txt` | Training and prediction |
+| `requirements-data.txt` | Data generation, mesh loading, and H5 export |
+| `requirements-viz.txt` | Open3D viewers and plots |
+| `requirements-eval.txt` | MuJoCo evaluation, with the data dependencies |
+
+For training on existing samples, install only `requirements.txt`.
+For CLI inference with H5 export, also install `requirements-data.txt`.
+For sample visualization, install the core, data, and visualization dependencies.
+
+Training examples use `--cpe_mode knn` and disable W&B logging.
+For `--cpe_mode sparse3d`, install a `spconv` wheel compatible with your CUDA environment.
+Checkpoints retain their positional encoding choice and require the same backend for inference.
+
+## Dataset
+
+Obtain the ACRONYM grasp files and their matching ShapeNet meshes separately.
+The subset builder expects this source layout:
+
+```text
+/path/to/acronym/
+├── meshes/<Category>/<mesh_hash>.obj
+└── grasps/<Category>_<mesh_hash>_<scale>.h5
+```
+
+Prepare a dedicated project subset:
 
 ```bash
-# Generate data
+python data/acronym/build_acronym_subset.py \
+  --src /path/to/acronym --dst data/acronym
+```
+
+The builder selects 10 training meshes and 2 test meshes per category.
+It writes `manifest.json` and removes destination assets outside the selected subset.
+The committed manifest contains paths and metadata, not the mesh or grasp files.
+
+Generate samples:
+
+```bash
 python data/generate_data.py
-
-# Generate only Mug
-python data/generate_data.py --category Mug
-
-# Quick test (fewer views/points)
-python data/generate_data.py --category Mug --n_views 5 --n_points 4096
-
-# Example rendered Mug mesh hash
-# 2997f21fa426e18a6ab1a25d0e8f3590
-
-# Visualize a single rendered view (depth + point cloud)
-python data/visualizer.py data/out/train/Mug/2997f21fa426e18a6ab1a25d0e8f3590/000.npz
-
-# Depth-only grid of all views for one Mug mesh
-python data/visualizer.py data/out/train/Mug/2997f21fa426e18a6ab1a25d0e8f3590/ --mode depth --grid
-
-# Point cloud coloured by grasp confidence
-python data/visualizer.py data/out/train/Mug/2997f21fa426e18a6ab1a25d0e8f3590/001.npz --mode grasps
-
-# Train
-python train.py --data_dir data/out --backbone ptv3 --epochs 10
 ```
 
-> **Linux Wayland note:** If `open3d` / GLFW fails to create a window, run the
-> visualizer through XWayland:
->
-> ```bash
-> env WAYLAND_DISPLAY= XDG_SESSION_TYPE=x11 GDK_BACKEND=x11 DISPLAY=:0 \
-> python data/visualizer.py data/out/train/Mug/2997f21fa426e18a6ab1a25d0e8f3590/000.npz
-> ```
+For a smaller run, use `--category Mug --n_views 5`.
+Generated samples appear under `data/out/<split>/<Category>/<mesh_hash>/`.
+Training budgets are defined in `data/acronym/training_budgets.json`.
 
-## Grasp Visualization + MuJoCo Execution
+## Rendering and Simulation
 
-Use `eval.visualize_grasp` for MuJoCo lift validation. MuJoCo always simulates
-the matching object mesh; the `--source` flag only decides where the grasp comes
-from.
+For headless data rendering, set EGL before running the generator:
 
 ```bash
-python -m eval.visualize_grasp ...
+PYOPENGL_PLATFORM=egl python data/generate_data.py
 ```
 
-### Recommended Workflow
+Open3D and interactive MuJoCo viewers require a graphical display.
+For headless MuJoCo evaluation, use `--no_viewer --skip_preview`.
+The first evaluation run can download the Panda model through `robot_descriptions`.
 
-```bash
-# 1) Visual sanity check for generated dataset labels from one data/out view.
-# The .npz path identifies the object; the matching mesh is found automatically.
-python -m eval.visualize_grasp \
-  --source labels \
-  --view_npz data/out/test/Mug/40f9a6cc6b2c3b3a78060a3a3a55e18f/000.npz \
-  --start_delay_s 0 \
-  --top_k 1
-
-# 2) Batch metric check for the same dataset labels.
-python -m eval.visualize_grasp \
-  --source labels \
-  --view_npz data/out/test/Mug/40f9a6cc6b2c3b3a78060a3a3a55e18f/000.npz \
-  --no_viewer \
-  --skip_preview \
-  --start_delay_s 0 \
-  --top_k 10
-
-# 3) Evaluate a PointNet++ checkpoint on the same view.
-python -m eval.visualize_grasp \
-  --source pred_cgn \
-  --checkpoint models/checkpoints/best_pn2.pt \
-  --view_npz data/out/test/Mug/40f9a6cc6b2c3b3a78060a3a3a55e18f/000.npz \
-  --start_delay_s 0 \
-  --top_k 5
-
-# 4) Evaluate a PTv3 checkpoint on the same view.
-python -m eval.visualize_grasp \
-  --source pred_ptv3 \
-  --checkpoint models/checkpoints/best_ptv3.pt \
-  --view_npz data/out/test/Mug/40f9a6cc6b2c3b3a78060a3a3a55e18f/000.npz \
-  --start_delay_s 0 \
-  --top_k 5
-
-# Optional: show GT labels and model predictions side-by-side in Trimesh.
-python -m eval.visualize_grasp \
-  --source pred_cgn \
-  --checkpoint <pointnetpp_checkpoint.pt> \
-  --view_npz data/out/test/Mug/40f9a6cc6b2c3b3a78060a3a3a55e18f/000.npz \
-  --start_delay_s 0 \
-  --top_k 5 \
-  --compare_labels_preview \
-  --preview_all_grasps
-```
-
-Use `--no_viewer --skip_preview` only for headless batch runs after the visual
-path looks correct.
-
-### Source Modes
-
-| Source | Grasp comes from | Main use |
-|---|---|---|
-| `labels` | Generated `data/out/*.npz` labels | Validate the dataset-to-MuJoCo pipeline. |
-| `pred_cgn` | PointNet++ checkpoint predictions from an `.npz` point cloud | Evaluate PointNet++ model grasps. |
-| `pred_ptv3` | PTv3 checkpoint predictions from an `.npz` point cloud | Evaluate PTv3 model grasps. |
-| `dataset_h5` | Raw ACRONYM `.h5` grasps | Low-level simulator sanity check. |
-| `model_h5` | Exported model `.h5` + `.json` predictions | Replay saved predictions without loading a checkpoint. |
-
-### Specific Object Selection
-
-Prefer passing an explicit `--view_npz`:
-
-```bash
-python -m eval.visualize_grasp \
-  --source labels \
-  --view_npz data/out/<split>/<Category>/<mesh_hash>/<view>.npz \
-  --start_delay_s 0 \
-  --top_k 1
-```
-
-The path encodes the split, category, and mesh hash, so the script can resolve
-the matching `data/acronym/meshes/.../*.obj` and scale from `manifest.json`.
-
-You can also auto-select by split/category/hash:
-
-```bash
-python -m eval.visualize_grasp \
-  --source labels \
-  --split test \
-  --category Mug \
-  --mesh_hash 40f9a6cc6b2c3b3a78060a3a3a55e18f \
-  --view_index 0 \
-  --start_delay_s 0 \
-  --top_k 1
-```
-
-### Raw H5 And Exported Prediction Replay
-
-These modes are optional for normal model comparison.
-
-```bash
-# Raw ACRONYM H5 replay: simulator sanity check.
-python -m eval.visualize_grasp \
-  --source dataset_h5 \
-  --grasp_h5 data/acronym/grasps/Mug_2997f21fa426e18a6ab1a25d0e8f3590_0.01929277648152453.h5 \
-  --grasp_index 50 \
-  --top_k 1
-
-# Exported model prediction replay.
-python -m eval.visualize_grasp \
-  --source model_h5 \
-  --grasp_h5 /path/to/model_grasps.h5 \
-  --grasp_json /path/to/model_grasps.json \
-  --top_k 1
-```
-
-### Success Metric And Notes
-
-- Success is physical target-object lift: `object_lift_m >= 0.03`.
-- Pose error is diagnostic only; hand motion alone is not success.
-- The MuJoCo executor reaches/reorients the gripper, pauses open for `--pre_close_pause_s` seconds, then closes, pauses, and lifts.
-- `labels` mode ranks generated candidates because `.npz` label confidence is usually binary.
-- `--label_conf_thresh` defaults to `0.5` and only controls generated GT/label selection, not model predictions.
-- `pred_cgn` and `pred_ptv3` rank all model-predicted point grasps by confidence.
-- `--top_k` previews ranked candidates together in Trimesh, then runs one MuJoCo trial per grasp.
-- `--compare_labels_preview` shows GT labels on the left and model predictions on the right. MuJoCo still executes the selected model grasps for `pred_cgn`/`pred_ptv3`.
-- Add `--preview_all_grasps` to draw a capped translucent-orange background set; selected GT top-k is green and selected model top-k is blue.
-- `--preview_all_limit` defaults to `40` per side. Increase it for denser context, or use `0` only when you really want every valid candidate.
-- PTv3 checkpoint loading uses the checkpoint's saved `cpe_mode` by default. Sparse3D PTv3 checkpoints require `spconv` in the evaluation environment.
-- `dataset_h5` and `model_h5` use H5 object mass when present.
-- `model_h5` requires non-empty `grasps/transforms`, `grasps/widths`, and `grasps/scores`.
+Evaluate generated labels with `--source labels` and a `--view_npz` path.
+Evaluate model predictions with `--source pred_cgn` or `--source pred_ptv3` and `--checkpoint`.
+All three modes require the matching object mesh and `data/acronym/manifest.json`.

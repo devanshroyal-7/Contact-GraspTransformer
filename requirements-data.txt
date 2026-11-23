@@ -1,0 +1,8 @@
+# Data generation / ACRONYM mesh rendering (generate_data.py, h5 I/O).
+# Also required by eval/ (h5py, trimesh).
+# Install with: pip install -r requirements.txt -r requirements-data.txt
+h5py>=3.7
+trimesh>=3.20
+pyglet>=1.5.27,<2
+pyrender>=0.1.45
+scipy>=1.10

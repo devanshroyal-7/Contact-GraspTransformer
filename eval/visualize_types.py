@@ -30,14 +30,7 @@ def validate_pose_se3(pose: np.ndarray, name: str = "pose") -> np.ndarray:
 
 @dataclass
 class GraspSpec:
-    """Input grasp spec in canonical contact-frame representation.
-
-    Convention (``make_grasp_pose`` / ACRONYM hdf5 column 0 as ``base_dirs`` in training data):
-    - local x: b×a
-    - local y: **baseline b** (finger opening, from ``base_dirs`` in .npz)
-    - local z: **approach a**
-    - translation: surface *contact* point
-    """
+    """Contact pose: x=b×a, y=baseline b, z=approach a; width in meters."""
 
     contact_pose_SE3: np.ndarray
     width_m: float
@@ -52,7 +45,7 @@ class GraspSpec:
 
 @dataclass
 class RetargetPlan:
-    """Target hand poses for the cleaned single-IK executor."""
+    """Approach, grasp, and lift poses for the Panda hand."""
 
     approach_pose: np.ndarray
     grasp_pose: np.ndarray

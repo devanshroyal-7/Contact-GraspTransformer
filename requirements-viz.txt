@@ -1,0 +1,4 @@
+# Visualization extras (viz/dataset_visualizer.py, viz/voxel_viz.py, viz/space_f_curves.py).
+# Install with: pip install -r requirements.txt -r requirements-viz.txt
+open3d>=0.17
+matplotlib>=3.7

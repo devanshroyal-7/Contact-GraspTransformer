@@ -1,19 +1,38 @@
+from __future__ import annotations
+
 import argparse
+import sys
 from pathlib import Path
+from typing import Optional, Tuple, Union
 
 import numpy as np
 
+# Script-mode bootstrap only (`python viz/voxel_viz.py`); package imports skip this.
+if __package__ is None:  # pragma: no cover
+    _REPO_ROOT = Path(__file__).resolve().parent.parent
+    if str(_REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(_REPO_ROOT))
 
-DEFAULT_MUG_PATH = Path(
-    "data/out/train/Mug/2997f21fa426e18a6ab1a25d0e8f3590/000.npz"
+from models.serialization_numpy import (
+    SERIALIZATION_PATTERNS,
+    hilbert_encode_3d,
+    morton_encode,
+    serialization_keys,
 )
 
+DEFAULT_SAMPLE_PATH = Path(
+    "data/out/train/Mug/2997f21fa426e18a6ab1a25d0e8f3590/000.npz"
+)
+_REPO_ROOT = Path(__file__).resolve().parent.parent
 
-def load_mug_points(path=DEFAULT_MUG_PATH):
-    """Load the mug view point cloud from a generated .npz sample."""
+
+def load_sample_points(
+    path: Union[str, Path] = DEFAULT_SAMPLE_PATH,
+) -> Tuple[np.ndarray, Path]:
+    """Load a point cloud from a generated ``.npz`` sample."""
     path = Path(path)
     if not path.is_absolute():
-        path = Path(__file__).resolve().parent / path
+        path = _REPO_ROOT / path
 
     with np.load(path) as data:
         if "points" not in data:
@@ -26,30 +45,18 @@ def load_mug_points(path=DEFAULT_MUG_PATH):
     return points[:, :3], path
 
 
-def _part1by2(n):
-    """Spread the low 10 bits by inserting two 0-bits between each bit."""
-    n = n.astype(np.int64) & 0x000003FF
-    n = (n ^ (n << 16)) & 0xFF0000FF
-    n = (n ^ (n << 8)) & 0x0F00F00F
-    n = (n ^ (n << 4)) & 0xC30C30C3
-    n = (n ^ (n << 2)) & 0x49249249
-    return n
-
-
-def morton_encode(grid_coord):
-    """NumPy equivalent of models.backbone_ptv3.morton_encode."""
-    x, y, z = grid_coord[:, 0], grid_coord[:, 1], grid_coord[:, 2]
-    return _part1by2(x) | (_part1by2(y) << 1) | (_part1by2(z) << 2)
-
-
-def quantize_like_ptv3(points, grid_size):
+def quantize_like_ptv3(
+    points: np.ndarray, grid_size: float
+) -> Tuple[np.ndarray, np.ndarray]:
     """Match PTv3 _quantize: floor(xyz / grid_size), then subtract per-scene min."""
     raw_grid = np.floor(points / grid_size).astype(np.int64)
     grid_min = raw_grid.min(axis=0, keepdims=True)
     return raw_grid - grid_min, grid_min.squeeze(0) * grid_size
 
 
-def voxel_pool_bitshift(points, grid_coord, pool_shift=1):
+def voxel_pool_bitshift(
+    points: np.ndarray, grid_coord: np.ndarray, pool_shift: int = 1
+) -> Tuple[np.ndarray, np.ndarray]:
     """Match PTv3 voxel pooling: grid_coord >> pool_shift, Morton cluster, mean xyz."""
     coarse_grid = grid_coord >> pool_shift
     code = morton_encode(coarse_grid)
@@ -63,7 +70,9 @@ def voxel_pool_bitshift(points, grid_coord, pool_shift=1):
     return down_points, coarse_grid[first_indices]
 
 
-def voxelize_to_occupied(points, grid_size):
+def voxelize_to_occupied(
+    points: np.ndarray, grid_size: float
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Return one occupied voxel and one mean xyz feature row per voxel."""
     grid_coord, origin = quantize_like_ptv3(points, grid_size)
     code = morton_encode(grid_coord)
@@ -77,7 +86,7 @@ def voxelize_to_occupied(points, grid_size):
     return grid_coord[first_indices], voxel_points, counts.squeeze(1), origin
 
 
-def normalize_values(values):
+def normalize_values(values: np.ndarray) -> np.ndarray:
     values = np.asarray(values, dtype=np.float64)
     if values.size == 0:
         return values
@@ -87,7 +96,13 @@ def normalize_values(values):
     return (values - values.min()) / span
 
 
-def voxels_to_gradient_mesh(grid_coord, voxel_size, origin, values=None, normalize=True):
+def voxels_to_gradient_mesh(
+    grid_coord: np.ndarray,
+    voxel_size: float,
+    origin: np.ndarray,
+    values: Optional[np.ndarray] = None,
+    normalize: bool = True,
+):
     """Build voxel cubes colored by height or by a per-voxel scalar value."""
     import open3d as o3d
     import matplotlib.pyplot as plt
@@ -118,12 +133,8 @@ def voxels_to_gradient_mesh(grid_coord, voxel_size, origin, values=None, normali
     return merged
 
 
-def draw_geometries(geometries, **kwargs):
-    import open3d as o3d
-
-    print_camera = kwargs.pop("print_camera", False)
-    print_camera_key = kwargs.pop("print_camera_key", "P")
-
+def _default_camera_kwargs(geometries, kwargs):
+    """Fill lookat/front/up/zoom defaults for Open3D drawing helpers."""
     if "lookat" not in kwargs:
         bounds = [
             geometry.get_axis_aligned_bounding_box()
@@ -137,60 +148,83 @@ def draw_geometries(geometries, **kwargs):
 
     kwargs.setdefault("front", [0.716676, 0.049010, -0.695683])
     kwargs.setdefault("up", [-0.122142, -0.973289, -0.194395])
-    kwargs.setdefault("zoom", 0.7)
+    kwargs.setdefault("zoom", 1.0)
+    return kwargs
 
-    if print_camera:
-        window_name = kwargs.pop("window_name", "Open3D")
-        width = kwargs.pop("width", 1920)
-        height = kwargs.pop("height", 1080)
-        left = kwargs.pop("left", 50)
-        top = kwargs.pop("top", 50)
 
-        vis = o3d.visualization.VisualizerWithKeyCallback()
-        vis.create_window(
-            window_name=window_name,
-            width=width,
-            height=height,
-            left=left,
-            top=top,
-        )
-        for geometry in geometries:
-            vis.add_geometry(geometry)
+def draw_geometries(geometries, **kwargs):
+    """Draw geometries with Open3D using consistent default camera framing."""
+    import open3d as o3d
 
-        view = vis.get_view_control()
-        view.set_front(kwargs["front"])
-        view.set_up(kwargs["up"])
-        view.set_lookat(kwargs["lookat"])
-        view.set_zoom(kwargs["zoom"])
-
-        def print_current_camera(vis):
-            view = vis.get_view_control()
-            print("Current Open3D camera:")
-            try:
-                print(f'  front = {np.asarray(view.get_front()).round(6).tolist()}')
-                print(f'  up = {np.asarray(view.get_up()).round(6).tolist()}')
-                print(f'  lookat = {np.asarray(view.get_lookat()).round(6).tolist()}')
-                print(f"  zoom = {view.get_zoom():.6f}")
-            except AttributeError:
-                camera = view.convert_to_pinhole_camera_parameters()
-                print("  This Open3D version does not expose front/up getters.")
-                print("  extrinsic =")
-                print(np.asarray(camera.extrinsic).round(6))
-            return False
-
-        key_code = ord(print_camera_key.upper())
-        vis.register_key_callback(key_code, print_current_camera)
-        print(f"Press {print_camera_key.upper()} in the Open3D window to print camera values.")
-        vis.run()
-        vis.destroy_window()
-        return
-
+    kwargs = _default_camera_kwargs(geometries, dict(kwargs))
     o3d.visualization.draw_geometries(geometries, **kwargs)
+
+
+def draw_geometries_with_camera_debug(
+    geometries,
+    *,
+    print_camera_key: str = "P",
+    **kwargs,
+):
+    """Like ``draw_geometries``, but register a key callback to print camera pose."""
+    import open3d as o3d
+
+    kwargs = _default_camera_kwargs(geometries, dict(kwargs))
+    window_name = kwargs.pop("window_name", "Open3D")
+    width = kwargs.pop("width", 1920)
+    height = kwargs.pop("height", 1080)
+    left = kwargs.pop("left", 50)
+    top = kwargs.pop("top", 50)
+
+    vis = o3d.visualization.VisualizerWithKeyCallback()
+    vis.create_window(
+        window_name=window_name,
+        width=width,
+        height=height,
+        left=left,
+        top=top,
+    )
+    for geometry in geometries:
+        vis.add_geometry(geometry)
+
+    view = vis.get_view_control()
+    view.set_front(kwargs["front"])
+    view.set_up(kwargs["up"])
+    view.set_lookat(kwargs["lookat"])
+    view.set_zoom(kwargs["zoom"])
+
+    def print_current_camera(vis):
+        view = vis.get_view_control()
+        print("Current Open3D camera:")
+        try:
+            print(f'  front = {np.asarray(view.get_front()).round(6).tolist()}')
+            print(f'  up = {np.asarray(view.get_up()).round(6).tolist()}')
+            print(f'  lookat = {np.asarray(view.get_lookat()).round(6).tolist()}')
+            print(f"  zoom = {view.get_zoom():.6f}")
+        except AttributeError:
+            camera = view.convert_to_pinhole_camera_parameters()
+            print("  This Open3D version does not expose front/up getters.")
+            print("  extrinsic =")
+            print(np.asarray(camera.extrinsic).round(6))
+        return False
+
+    key_code = ord(print_camera_key.upper())
+    vis.register_key_callback(key_code, print_current_camera)
+    print(f"Press {print_camera_key.upper()} in the Open3D window to print camera values.")
+    vis.run()
+    vis.destroy_window()
+
+
+def _draw(geometries, *, print_camera: bool = False, **kwargs):
+    """Dispatch to plain draw or camera-debug draw based on CLI flag."""
+    if print_camera:
+        draw_geometries_with_camera_debug(geometries, **kwargs)
+    else:
+        draw_geometries(geometries, **kwargs)
 
 
 BASE_GRID_SIZE = 0.005
 SPARSE_COLOR_MODES = ("delta_norm", "after_norm", "channel", "signed_delta")
-SERIALIZATION_PATTERNS = ("z", "tz", "hilbert", "thilbert")
 SERIALIZATION_TITLES = {
     "z": "Z-order / Morton",
     "tz": "Transposed Z-order / Morton",
@@ -199,7 +233,9 @@ SERIALIZATION_TITLES = {
 }
 
 
-def make_sparse_input_features(voxel_points, counts):
+def make_sparse_input_features(
+    voxel_points: np.ndarray, counts: np.ndarray
+) -> np.ndarray:
     """Simple deterministic voxel features: normalized xyz plus log occupancy."""
     center = voxel_points.mean(axis=0, keepdims=True)
     scale = np.linalg.norm(voxel_points - center, axis=1).max()
@@ -210,7 +246,12 @@ def make_sparse_input_features(voxel_points, counts):
     return np.concatenate([xyz_norm, count_feat], axis=1).astype(np.float32)
 
 
-def sparse_color_values(before, after, color_mode, feature_channel):
+def sparse_color_values(
+    before: np.ndarray,
+    after: np.ndarray,
+    color_mode: str,
+    feature_channel: int,
+) -> np.ndarray:
     if feature_channel < 0 or feature_channel >= before.shape[1]:
         raise ValueError(
             f"--feature-channel must be in [0, {before.shape[1] - 1}], "
@@ -228,60 +269,7 @@ def sparse_color_values(before, after, color_mode, feature_channel):
     raise ValueError(f"Unknown sparse color mode: {color_mode}")
 
 
-def _hilbert_axes_to_transpose(coords, bits):
-    """Convert integer axes coordinates to Hilbert transpose form."""
-    dims = len(coords)
-    x = [int(v) for v in coords]
-    m = 1 << (bits - 1)
-
-    q = m
-    while q > 1:
-        p = q - 1
-        for i in range(dims):
-            if x[i] & q:
-                x[0] ^= p
-            else:
-                t = (x[0] ^ x[i]) & p
-                x[0] ^= t
-                x[i] ^= t
-        q >>= 1
-
-    for i in range(1, dims):
-        x[i] ^= x[i - 1]
-
-    t = 0
-    q = m
-    while q > 1:
-        if x[dims - 1] & q:
-            t ^= q - 1
-        q >>= 1
-    for i in range(dims):
-        x[i] ^= t
-
-    return x
-
-
-def hilbert_encode_3d(grid_coord, bits):
-    """Encode 3-D integer grid coordinates into Hilbert distances."""
-    max_coord = (1 << bits) - 1
-    if np.any(grid_coord < 0) or np.any(grid_coord > max_coord):
-        raise ValueError(
-            f"Hilbert encode expects coordinates in [0, {max_coord}] for bits={bits}"
-        )
-
-    distances = np.zeros(len(grid_coord), dtype=np.int64)
-    for i, coord in enumerate(grid_coord):
-        axes = _hilbert_axes_to_transpose(coord, bits)
-        index = 0
-        for bit_level in range(bits):
-            for axis_idx, axis in enumerate(axes):
-                bit = (axis >> bit_level) & 1
-                index |= bit << (bit_level * 3 + (2 - axis_idx))
-        distances[i] = index
-    return distances
-
-
-def make_serialization_path_lineset(sorted_centers, step=1):
+def make_serialization_path_lineset(sorted_centers: np.ndarray, step: int = 1):
     import open3d as o3d
 
     if len(sorted_centers) < 2:
@@ -307,19 +295,6 @@ def make_serialization_path_lineset(sorted_centers, step=1):
     return line_set
 
 
-def serialization_keys(grid_coord, pattern, bits):
-    if pattern in ("tz", "thilbert"):
-        key_coord = grid_coord[:, [1, 2, 0]]
-    else:
-        key_coord = grid_coord
-
-    if pattern in ("z", "tz"):
-        return morton_encode(key_coord)
-    if pattern in ("hilbert", "thilbert"):
-        return hilbert_encode_3d(key_coord, bits)
-    raise ValueError(f"Unknown serialization pattern: {pattern}")
-
-
 def visualize_serialization(points, args, resolved_path, pattern):
     grid_coord, _, _, origin = voxelize_to_occupied(points, args.grid_size)
     if len(grid_coord) == 0:
@@ -338,7 +313,7 @@ def visualize_serialization(points, args, resolved_path, pattern):
     sorted_centers = centers[order]
     title = SERIALIZATION_TITLES[pattern]
 
-    print(f"Loaded mug point cloud: {resolved_path}")
+    print(f"Loaded sample point cloud: {resolved_path}")
     print(
         f"{title} serialization "
         f"| occupied voxels: {len(grid_coord)} "
@@ -360,12 +335,12 @@ def visualize_serialization(points, args, resolved_path, pattern):
         sorted_centers,
         step=args.curve_line_step,
     )
-    draw_geometries(
+    _draw(
         [voxel_mesh, path_lines],
+        print_camera=args.print_camera,
         window_name=f"{title} 1D serialization over occupied voxels",
         width=1200,
         height=800,
-        print_camera=args.print_camera,
     )
 
 
@@ -407,14 +382,14 @@ def visualize_sparse_conv(points, args, resolved_path):
     valid_t = torch.ones(1, len(grid_coord), dtype=torch.bool, device=device)
 
     with torch.no_grad():
-        update = cpe(feat_t, grid_t, valid_t)
+        update = cpe(feat_t, valid_t, grid_t)
         after_t = feat_t + update
 
     before = feat_t.squeeze(0).detach().cpu().numpy()
     after = after_t.squeeze(0).detach().cpu().numpy()
     values = sparse_color_values(before, after, args.sparse_color, args.feature_channel)
 
-    print(f"Loaded mug point cloud: {resolved_path}")
+    print(f"Loaded sample point cloud: {resolved_path}")
     print(
         "SparseCPE visualization "
         f"| voxels: {len(grid_coord)} "
@@ -425,12 +400,12 @@ def visualize_sparse_conv(points, args, resolved_path):
         "Note: SubMConv3d keeps the same active voxel coordinates; colors show "
         "feature changes on that fixed grid."
     )
-    draw_geometries(
+    _draw(
         [voxels_to_gradient_mesh(grid_coord, args.grid_size, origin, values=values)],
+        print_camera=args.print_camera,
         window_name=f"SparseCPE feature color: {args.sparse_color}",
         width=1000,
         height=700,
-        print_camera=args.print_camera,
     )
 
 
@@ -439,14 +414,14 @@ def visualize_voxel_pooling(points, args, resolved_path):
     current_grid, origin = quantize_like_ptv3(current_points, args.grid_size)
 
     input_grid = np.unique(current_grid, axis=0)
-    print(f"Loaded mug point cloud: {resolved_path}")
-    print(f"Visualizing voxelized mug (grid size {args.grid_size} m)...")
-    draw_geometries(
+    print(f"Loaded sample point cloud: {resolved_path}")
+    print(f"Visualizing voxelized sample (grid size {args.grid_size} m)...")
+    _draw(
         [voxels_to_gradient_mesh(input_grid, args.grid_size, origin)],
+        print_camera=args.print_camera,
         window_name="Input voxelization",
         width=800,
         height=600,
-        print_camera=args.print_camera,
     )
 
     current_grid_size = args.grid_size
@@ -461,12 +436,12 @@ def visualize_voxel_pooling(points, args, resolved_path):
         num_p = len(current_grid)
         print(f"Stage {stage}: grid {current_grid_size:.2f} m | occupied voxels: {num_p}")
 
-        draw_geometries(
+        _draw(
             [voxels_to_gradient_mesh(current_grid, current_grid_size, origin)],
+            print_camera=args.print_camera,
             window_name=f"Encoder stage {stage} (grid {current_grid_size:.2f} m)",
             width=1000,
             height=700,
-            print_camera=args.print_camera,
         )
 
     print("\nVisualization complete. All stages processed.")
@@ -482,7 +457,7 @@ def parse_args():
     parser.add_argument(
         "path",
         nargs="?",
-        default=DEFAULT_MUG_PATH,
+        default=DEFAULT_SAMPLE_PATH,
         help="Path to a generated .npz sample containing a `points` array.",
     )
     parser.add_argument(
@@ -561,7 +536,7 @@ def parse_args():
 
 def main():
     args = parse_args()
-    points, resolved_path = load_mug_points(args.path)
+    points, resolved_path = load_sample_points(args.path)
 
     if args.mode in ("pooling", "all"):
         visualize_voxel_pooling(points, args, resolved_path)

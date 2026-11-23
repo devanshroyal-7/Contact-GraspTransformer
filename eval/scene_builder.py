@@ -1,10 +1,4 @@
-"""Scene construction for grasp visualization/execution.
-
-Design goals:
-- Menagerie-style environment visuals (skybox + checkerboard + directional light).
-- Stable table/object placement for grasp debugging.
-- Deterministic Panda initialization (home keyframe + matching controls).
-"""
+"""Build MuJoCo scenes with a Panda arm, table, and target object."""
 
 from __future__ import annotations
 
@@ -116,13 +110,10 @@ def _find_collision_meshes(cache_dir: str) -> list[str]:
     return files or ["object.obj"]
 
 
-# Geometry contract:
-# - World floor follows Menagerie `scene.xml`: checker plane at z=0.
-# - The table surface remains at z=TABLE_TOP_Z to stay aligned with data generation.
+# Table height matches data generation; the world floor is at z=0.
 TABLE_DIMS = (1.2, 1.6, 0.6)
 TABLE_TOP_Z = TABLE_DIMS[2] * 0.5
 WORLD_FLOOR_Z = 0.0
-# Place Panda on the tabletop near the back edge (not outside the table footprint).
 ROBOT_TABLE_EDGE_INSET_M = 0.08
 EVAL_OBJECT_OFFSET_XY = (-0.18, 0.0)
 TABLETOP_THICKNESS_M = 0.04
@@ -131,7 +122,7 @@ TABLE_LEG_INSET_X_M = 0.12
 TABLE_LEG_INSET_Y_M = 0.18
 TABLE_APRON_THICKNESS_M = 0.03
 TABLE_APRON_HEIGHT_M = 0.08
-# Slight sink into floor plane to avoid visual "floating" from z-fighting.
+# Overlap the floor to prevent z-fighting.
 TABLE_LEG_FLOOR_SINK_M = 0.01
 
 TABLE_RGBA = (0.32, 0.32, 0.34, 1.0)
@@ -139,7 +130,6 @@ OBJECT_FRICTION = (1.2, 0.05, 0.01)
 OBJECT_DENSITY = 150.0
 OBJECT_FREEJOINT_DAMPING = (3.0, 3.0, 3.0, 0.3, 0.3, 0.3)
 SETTLE_STEPS = 200
-# Free joint + collision so the arm interacts physically (set False for deterministic static eval).
 OBJECT_DYNAMIC = True
 
 
